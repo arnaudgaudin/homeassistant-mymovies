@@ -8,7 +8,7 @@
 
 const STRINGS = {
   en: {
-    search: "Search", ascending: "Ascending", descending: "Descending",
+    search: "Title, director, actor…", ascending: "Ascending", descending: "Descending",
     allTypes: "All types", allGenres: "All genres", allDiscs: "All discs", threeD: "Blu-ray 3D", movies: "Movies", series: "TV series", documentaries: "Documentaries",
     segWatched: "Watched", segAll: "All", segUnwatched: "Not watched", watchedFilter: "Watched filter",
     boxSets: "Box sets", collapsed: "Grouped", expanded: "Expanded", refresh: "Refresh", titles: "titles", films: "films",
@@ -24,6 +24,13 @@ const STRINGS = {
     creditCollection: "Collection data", creditCovers: "Covers",
     tmdbNotice: "This product uses the TMDB API but is not endorsed or certified by TMDB.",
     unofficial: "Unofficial integration, not affiliated with or endorsed by My Movies.",
+    allAges: "Any age", allAudiences: "All audiences", forAge: "For a {n}-year-old",
+    editions: "editions", editionsTitle: "Editions in the collection",
+    changeCover: "Change cover", coverTitle: "Choose the cover", coverAuto: "Automatic (best resolution)",
+    coverUpload: "Use my own image (JPEG or PNG)", coverUploadButton: "Upload", back: "Back",
+    chosen: "chosen", current: "current", noTmdb: "TMDB does not know this title: only the My Movies cover and your own image are available.",
+    noTmdbKey: "Add a TMDB API key in the integration options to choose among TMDB posters.",
+    sources: { tmdb: "TMDB", mymovies: "My Movies", upload: "Your image" },
     importCsv: "Import the collection export",
     importTitle: "Import the My Movies export",
     importText: "In the My Movies app, export your collection to a CSV file, then choose it here. It gives the titles their names, IMDb IDs and details; the watched state always comes from My Movies.",
@@ -35,7 +42,7 @@ const STRINGS = {
     },
   },
   fr: {
-    search: "Rechercher", ascending: "Croissant", descending: "Décroissant",
+    search: "Titre, réalisateur, acteur…", ascending: "Croissant", descending: "Décroissant",
     allTypes: "Tous les types", allGenres: "Tous les genres", allDiscs: "Tous les supports", threeD: "Blu-ray 3D", movies: "Films", series: "Séries", documentaries: "Documentaires",
     segWatched: "Vus", segAll: "Tous", segUnwatched: "Non vus", watchedFilter: "Filtre vu",
     boxSets: "Coffrets", collapsed: "Repliés", expanded: "Dépliés", refresh: "Actualiser", titles: "titres", films: "films",
@@ -52,6 +59,13 @@ const STRINGS = {
     creditCollection: "Données de la collection", creditCovers: "Jaquettes",
     tmdbNotice: "Ce produit utilise l'API TMDB mais n'est ni approuvé ni certifié par TMDB.",
     unofficial: "Intégration non officielle, ni affiliée à My Movies ni approuvée par My Movies.",
+    allAges: "Tous les âges", allAudiences: "Tout public", forAge: "Pour un enfant de {n} ans",
+    editions: "éditions", editionsTitle: "Éditions dans la collection",
+    changeCover: "Changer la jaquette", coverTitle: "Choisir la jaquette", coverAuto: "Automatique (meilleure résolution)",
+    coverUpload: "Utiliser ma propre image (JPEG ou PNG)", coverUploadButton: "Importer", back: "Retour",
+    chosen: "choisie", current: "actuelle", noTmdb: "TMDB ne connaît pas ce titre : seules la jaquette My Movies et ta propre image sont disponibles.",
+    noTmdbKey: "Ajoute une clé API TMDB dans les options de l'intégration pour choisir parmi les affiches TMDB.",
+    sources: { tmdb: "TMDB", mymovies: "My Movies", upload: "Ton image" },
     importCsv: "Importer l'export de la collection",
     importTitle: "Importer l'export My Movies",
     importText: "Dans l'application My Movies, exportez votre collection en fichier CSV, puis choisissez-le ici. Il donne aux titres leur nom, leur ID IMDb et leurs détails ; le statut « vu » vient toujours de My Movies.",
@@ -88,6 +102,23 @@ const GENRES_FR = {
   "Suspense/Thriller": "Thriller", Thriller: "Thriller", Television: "Télévision",
   War: "Guerre", Western: "Western",
 };
+// Genres spelled two ways in My Movies are filtered together.
+const GENRE_ALIASES = { Anime: "Animation", Sports: "Sport", Thriller: "Suspense/Thriller" };
+const canonGenre = (g) => GENRE_ALIASES[g] || g;
+const AGES = ["0", "6", "10", "12", "16"];
+// Minimum age of a parental rating; null when unknown ("Accord parental", "Unrated"...).
+function minimumAge(rating) {
+  const r = String(rating || "").trim().toLowerCase();
+  if (!r) return null;
+  if (/tous publics|^tp$|^u$|^g$|all ages/.test(r)) return 0;
+  if (r === "pg-13") return 13;
+  if (r === "pg") return 10;
+  if (r === "r" || r === "nc-17") return 17;
+  const n = r.match(/(\d{1,2})/);
+  return n ? Number(n[1]) : null;
+}
+// Edition shown on the tile of a film owned in several editions: 4K first.
+const DISC_RANK = { "4K Ultra HD": 0, "Blu-ray": 1, DVD: 2 };
 const STATE_KEY = "mymovies-panel";
 const icon = (path) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`;
 const CHECK = icon("M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z");
@@ -108,7 +139,7 @@ const norm = (value) =>
   String(value ?? "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
 function loadState() {
-  const defaults = { sort: "title", dir: "asc", type: "all", genre: "all", disc: "all", watched: "all", expand: false, view: "grid", q: "" };
+  const defaults = { sort: "title", dir: "asc", type: "all", genre: "all", age: "all", disc: "all", watched: "all", expand: false, view: "grid", q: "" };
   try {
     return { ...defaults, ...JSON.parse(localStorage.getItem(STATE_KEY) || "{}"), q: "" };
   } catch (err) {
@@ -181,7 +212,7 @@ class MyMoviesPanel extends HTMLElement {
     // Offer the genres present in the collection, sorted by their displayed name.
     const select = this.shadowRoot.getElementById("genre");
     if (!select || !this._titles) return;
-    const genres = [...new Set(this._titles.flatMap((t) => t.genres || []))];
+    const genres = [...new Set(this._titles.flatMap((t) => (t.genres || []).map(canonGenre)))];
     genres.sort((a, b) => this._genre(a).localeCompare(this._genre(b), this._lang));
     if (this._state.genre !== "all" && !genres.includes(this._state.genre)) this._state.genre = "all";
     select.innerHTML = ["all", ...genres]
@@ -247,6 +278,7 @@ class MyMoviesPanel extends HTMLElement {
   }
 
   _findItem(key) {
+    if (key.startsWith("g:")) return this._groups?.get(key) || null;
     const byId = this._byId();
     for (const t of this._titles || []) {
       if (`t:${t.id}` === key) return { ...t, key, parent: (t.box_set_id && byId.get(t.box_set_id)) || undefined };
@@ -264,7 +296,11 @@ class MyMoviesPanel extends HTMLElement {
     const collator = new Intl.Collator(this._lang, { numeric: true, sensitivity: "base" });
     const items = this._allItems().filter((i) => {
       if (st.type !== "all" && i.media_type !== TYPES[st.type]) return false;
-      if (st.genre !== "all" && !(i.genres || []).includes(st.genre)) return false;
+      if (st.genre !== "all" && !(i.genres || []).some((g) => canonGenre(g) === st.genre)) return false;
+      if (st.age !== "all") {
+        const age = minimumAge(i.parental_rating);
+        if (age == null || age > Number(st.age)) return false;
+      }
       if (st.disc === "3d" && !i.three_d) return false;
       if (st.disc !== "all" && st.disc !== "3d" && i.disc_type !== st.disc) return false;
       if (st.watched === "watched" && !i.watched) return false;
@@ -275,8 +311,9 @@ class MyMoviesPanel extends HTMLElement {
       }
       return true;
     });
+    const grouped = this._groupEditions(items);
     const sign = st.dir === "desc" ? -1 : 1;
-    items.sort((a, b) => {
+    grouped.sort((a, b) => {
       const va = getKey(a);
       const vb = getKey(b);
       let r = 0;
@@ -286,7 +323,34 @@ class MyMoviesPanel extends HTMLElement {
       else r = typeof va === "number" && typeof vb === "number" ? va - vb : collator.compare(String(va), String(vb));
       return sign * r || collator.compare(a.sort_title || a.title || "", b.sort_title || b.title || "");
     });
-    return items;
+    return grouped;
+  }
+
+  _groupEditions(items) {
+    // Editions of one film (same IMDb ID) share a tile; its dialog lists them.
+    this._groups = new Map();
+    const byImdb = new Map();
+    for (const i of items) {
+      if (!i.imdb || i.children?.length) continue;
+      if (!byImdb.has(i.imdb)) byImdb.set(i.imdb, []);
+      byImdb.get(i.imdb).push(i);
+    }
+    const out = [];
+    const seen = new Set();
+    for (const i of items) {
+      const editions = i.imdb && !i.children?.length ? byImdb.get(i.imdb) : null;
+      if (!editions || editions.length < 2) {
+        out.push(i);
+        continue;
+      }
+      if (seen.has(i.imdb)) continue;
+      seen.add(i.imdb);
+      editions.sort((a, b) => (DISC_RANK[a.disc_type] ?? 9) - (DISC_RANK[b.disc_type] ?? 9) || a.collection_number - b.collection_number);
+      const group = { ...editions[0], key: `g:${i.imdb}`, editions, watched: editions.some((e) => e.watched), parent: undefined };
+      this._groups.set(group.key, group);
+      out.push(group);
+    }
+    return out;
   }
 
   // ---- formatting -------------------------------------------------------
@@ -338,6 +402,10 @@ class MyMoviesPanel extends HTMLElement {
           ${option("series", t.series, st.type)}${option("documentaries", t.documentaries, st.type)}
         </select></span>
         <span class="select"><select id="genre" aria-label="${esc(t.allGenres)}">${option("all", t.allGenres, "all")}</select></span>
+        <span class="select"><select id="age" aria-label="${esc(t.allAges)}">
+          ${option("all", t.allAges, st.age)}${option("0", t.allAudiences, st.age)}
+          ${AGES.slice(1).map((n) => option(n, t.forAge.replace("{n}", n), st.age)).join("")}
+        </select></span>
         <span class="select"><select id="disc" aria-label="${esc(t.allDiscs)}">${option("all", t.allDiscs, "all")}</select></span>
         <div class="segmented" id="watched" role="radiogroup" aria-label="${esc(t.watchedFilter)}">
           ${seg("watched", "watched", esc(t.segWatched), st.watched)}${seg("watched", "all", esc(t.segAll), st.watched)}${seg("watched", "unwatched", esc(t.segUnwatched), st.watched)}
@@ -383,6 +451,7 @@ class MyMoviesPanel extends HTMLElement {
     $("type").addEventListener("change", (ev) => update({ type: ev.target.value }));
     $("disc").addEventListener("change", (ev) => update({ disc: ev.target.value }));
     $("genre").addEventListener("change", (ev) => update({ genre: ev.target.value }));
+    $("age").addEventListener("change", (ev) => update({ age: ev.target.value }));
     segmented("watched", "watched");
     segmented("view", "view");
     segmented("expand", "expand", (value) => value === "expanded");
@@ -421,6 +490,7 @@ class MyMoviesPanel extends HTMLElement {
   }
 
   _tag(i) {
+    if (i.editions) return `<span class="tag">${i.editions.length} ${esc(this._t.editions)}</span>`;
     const count = i.children?.length;
     if (i.parent) return `<span class="tag">${esc(i.parent.title || "")}</span>`;
     if (count) return `<span class="tag">${esc(this._t.boxSet)} · ${count} ${esc(this._t.films)}</span>`;
@@ -511,11 +581,12 @@ class MyMoviesPanel extends HTMLElement {
 
   _renderDialog(animate) {
     const root = this.shadowRoot.getElementById("dialog");
-    const body = this._dialog.kind === "import" ? this._importBody() : this._titleBody();
+    const bodies = { import: () => this._importBody(), cover: () => this._coverBody(), title: () => this._titleBody() };
+    const body = bodies[this._dialog.kind]();
     if (body === null) return this._closeDialog();
     root.innerHTML = `
       <div class="backdrop ${animate ? "" : "static"}" data-action="close">
-        <div class="dialog ${this._dialog.kind}" role="dialog" aria-modal="true">
+        <div class="dialog dialog-${this._dialog.kind}" role="dialog" aria-modal="true">
           <button class="icon close" data-action="close" title="${esc(this._t.close)}" aria-label="${esc(this._t.close)}">×</button>
           ${body}
         </div>
@@ -531,7 +602,11 @@ class MyMoviesPanel extends HTMLElement {
     const children = !i.child ? i.children || [] : [];
     return `
       <div class="body">
-        <div class="cover">${this._cover(i, title)}</div>
+        <div class="cover-col">
+          <div class="cover">${this._cover(i, title)}</div>
+          ${i.cover ? `<div class="cover-info">${esc(t.sources[i.cover.source] || i.cover.source)}${i.cover.width ? ` · ${i.cover.width}×${i.cover.height}` : ""}${i.cover.chosen ? ` · ${esc(t.chosen)}` : ""}</div>` : ""}
+          ${this._hass.user?.is_admin && !i.editions ? `<button class="secondary small" data-action="change-cover">${esc(t.changeCover)}</button>` : ""}
+        </div>
         <div class="info">
           <h2>${esc(title)}</h2>
           ${i.original_title && i.original_title !== title ? `<div class="original">${esc(i.original_title)}</div>` : ""}
@@ -540,7 +615,7 @@ class MyMoviesPanel extends HTMLElement {
           ${i.description ? `<p class="description">${esc(paragraphs(i.description))}</p>` : ""}
           <div class="info-rows">
             ${this._info(t.director, i.director)}
-            ${this._info(t.cast, (i.actors || []).join(", "))}
+            ${this._info(t.cast, (i.actors || []).slice(0, 8).join(", "))}
             ${this._info(t.rating, i.rating != null ? `★ ${i.rating}/10` : "")}
             ${this._info(t.personalRating, i.personal_rating != null ? `★ ${i.personal_rating}` : "")}
             ${this._info(t.released, this._date(i.release_date))}
@@ -549,6 +624,16 @@ class MyMoviesPanel extends HTMLElement {
             ${this._info(t.group, i.group)}
           </div>
           ${i.parent ? `<div class="info-rows"><div class="info-row"><span>${esc(t.inBoxSet)}</span><a href="#" data-open="t:${esc(i.parent.id)}">${esc(i.parent.title || "")}</a></div></div>` : ""}
+          ${i.editions ? `
+            <h3>${esc(t.editionsTitle)}</h3>
+            <div class="editions">
+              ${i.editions.map((e) => `
+                <button class="edition" data-open="t:${esc(e.id)}">
+                  <span>${esc([e.disc_type, e.three_d ? "3D" : "", e.edition].filter(Boolean).join(" · ") || e.title)}</span>
+                  <span class="edition-meta">#${esc(e.collection_number)}${e.parent ? ` · ${esc(e.parent.title || "")}` : ""}</span>
+                  ${e.watched ? `<span class="badge inline" title="${esc(t.watched)}">${CHECK}</span>` : ""}
+                </button>`).join("")}
+            </div>` : ""}
           ${children.length ? `
             <h3>${esc(t.contents)}</h3>
             <div class="children">
@@ -564,13 +649,91 @@ class MyMoviesPanel extends HTMLElement {
                 </button>`;
               }).join("")}
             </div>` : ""}
-          <div class="actions">
+          ${i.editions ? "" : `<div class="actions">
             ${this._dialog.error ? `<span class="error">${esc(t.failed)} : ${esc(this._dialog.error)}</span>` : ""}
             ${i.watched ? `<button class="secondary" data-action="clear" ${this._busy ? "disabled" : ""}>${esc(t.clearWatched)}</button>` : ""}
             <button class="primary" data-action="mark" ${this._busy ? "disabled" : ""}>${esc(t.markWatched)}</button>
-          </div>
+          </div>`}
         </div>
       </div>`;
+  }
+
+  _coverBody() {
+    const t = this._t;
+    const d = this._dialog;
+    const current = d.result?.current || {};
+    const isCurrent = (c) =>
+      c.source === current.source && (c.source !== "tmdb" || c.path === current.path);
+    const notice = !d.result
+      ? `<p>${esc(t.loading)}</p>`
+      : !d.result.tmdb_key
+        ? `<p class="hint">${esc(t.noTmdbKey)}</p>`
+        : !d.result.tmdb_known
+          ? `<p class="hint">${esc(t.noTmdb)}</p>`
+          : "";
+    return `
+      <div class="import-body">
+        <h2>${esc(t.coverTitle)}</h2>
+        <div class="meta">${esc(d.title || "")}</div>
+        ${notice}
+        <div class="choices">
+          ${(d.result?.choices || []).map((c, n) => `
+            <button class="choice ${isCurrent(c) ? "current" : ""}" data-action="pick" data-index="${n}" ${this._busy ? "disabled" : ""}>
+              <img loading="lazy" src="${esc(c.url)}" alt="" />
+              <span>${esc(t.sources[c.source] || c.source)}${c.lang ? ` · ${esc(c.lang)}` : ""}</span>
+              <span class="dims">${c.width ? `${c.width}×${c.height}` : ""}${isCurrent(c) ? ` · ${esc(t.current)}` : ""}</span>
+            </button>`).join("")}
+        </div>
+        <p>${esc(t.coverUpload)}</p>
+        <input id="cover-file" type="file" accept="image/jpeg,image/png" ${this._busy ? "disabled" : ""} />
+        <div class="actions">
+          ${d.error ? `<span class="error">${esc(t.failed)} : ${esc(d.error)}</span>` : ""}
+          <button class="secondary" data-action="back">${esc(t.back)}</button>
+          <button class="secondary" data-action="auto" ${this._busy || !d.result?.chosen ? "disabled" : ""}>${esc(t.coverAuto)}</button>
+          <button class="primary" data-action="upload-cover" ${this._busy ? "disabled" : ""}>${esc(t.coverUploadButton)}</button>
+        </div>
+      </div>`;
+  }
+
+  async _openCoverDialog() {
+    const item = this._findItem(this._dialog.key);
+    this._dialog = { kind: "cover", id: item.id, title: item.title, back: this._dialog.key, error: null, result: null };
+    this._renderDialog(false);
+    try {
+      this._dialog.result = await this._hass.connection.sendMessagePromise({ type: "mymovies/cover_choices", title_id: item.id });
+    } catch (err) {
+      this._dialog.error = err.message || String(err);
+    }
+    if (this._dialog?.kind === "cover") this._renderDialog(false);
+  }
+
+  async _setCover(choice) {
+    const d = this._dialog;
+    this._busy = true;
+    d.error = null;
+    this._renderDialog(false);
+    try {
+      let message = { type: "mymovies/set_cover", title_id: d.id, source: choice.source };
+      if (choice.source === "tmdb") message = { ...message, path: choice.path, width: choice.width, height: choice.height };
+      if (choice.source === "upload") {
+        const file = this.shadowRoot.getElementById("cover-file")?.files?.[0];
+        if (!file) throw new Error(this._t.coverUpload);
+        const form = new FormData();
+        form.append("file", file);
+        const resp = await this._hass.fetchWithAuth("/api/file_upload", { method: "POST", body: form });
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        message.file_id = (await resp.json()).file_id;
+      }
+      await this._hass.connection.sendMessagePromise(message);
+      this._busy = false;
+      this._dialog = { kind: "title", key: d.back, error: null };
+      await this._load();
+    } catch (err) {
+      d.error = err.message || String(err);
+    } finally {
+      this._busy = false;
+      if (this._dialog) this._renderDialog(false);
+    }
   }
 
   _importBody() {
@@ -601,6 +764,17 @@ class MyMoviesPanel extends HTMLElement {
       return this._closeDialog();
     }
     if (action === "import") return this._import();
+    if (action === "change-cover") return this._openCoverDialog();
+    if (action === "back") {
+      this._dialog = { kind: "title", key: this._dialog.back, error: null };
+      return this._renderDialog(false);
+    }
+    if (action === "pick") {
+      const choice = this._dialog.result.choices[Number(ev.target.closest("[data-index]").dataset.index)];
+      return this._setCover(choice);
+    }
+    if (action === "auto") return this._setCover({ source: "auto" });
+    if (action === "upload-cover") return this._setCover({ source: "upload" });
     if (action !== "mark" && action !== "clear") return;
     const item = this._findItem(this._dialog.key);
     this._busy = true;
@@ -705,7 +879,7 @@ const STYLE = `
   .side span:first-child { color: var(--primary-text-color); }
   .backdrop { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(0, 0, 0, 0.6); animation: fade-in 0.18s ease-out; }
   .dialog { position: relative; width: min(900px, 100%); max-height: calc(100vh - 32px); overflow: auto; border-radius: 16px; background: var(--card-background-color); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5); animation: pop-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1); }
-  .dialog.import { width: min(520px, 100%); }
+  .dialog-import { width: min(520px, 100%); }
   .backdrop.static, .backdrop.static .dialog { animation: none; }
   .backdrop.leaving { animation: fade-out 0.16s ease-in forwards; }
   .backdrop.leaving .dialog { animation: pop-out 0.16s ease-in forwards; }
@@ -733,6 +907,23 @@ const STYLE = `
   .mini { display: flex; flex-direction: column; gap: 4px; padding: 0; border: none; background: none; text-align: left; cursor: pointer; font-size: 12px; }
   .mini-cover { position: relative; display: block; }
   .mini img, .mini .noposter { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 6px; background: var(--secondary-background-color, #2224); display: block; }
+  .cover-col { flex: 0 0 240px; display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
+  .cover-col .cover { flex: none; }
+  .cover-info { font-size: 12px; color: var(--secondary-text-color); text-align: center; }
+  .secondary.small { height: 30px; font-size: 13px; }
+  .editions { display: flex; flex-direction: column; gap: 6px; }
+  .edition { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 40px 8px 12px; border: 1px solid var(--divider-color); border-radius: 8px; background: transparent; text-align: left; cursor: pointer; }
+  .edition:hover { background: rgba(127, 127, 127, 0.12); }
+  .edition-meta { font-size: 12px; color: var(--secondary-text-color); }
+  .badge.inline { top: 50%; right: 10px; margin-top: -10px; width: 20px; height: 20px; }
+  .badge.inline svg { width: 14px; height: 14px; }
+  .choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 12px; margin: 12px 0; }
+  .choice { display: flex; flex-direction: column; gap: 2px; padding: 4px; border: 2px solid transparent; border-radius: 8px; background: none; text-align: left; cursor: pointer; font-size: 12px; }
+  .choice.current { border-color: var(--primary-color); }
+  .choice img { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 6px; background: var(--secondary-background-color, #2224); }
+  .choice .dims { color: var(--secondary-text-color); }
+  .hint { color: var(--secondary-text-color); font-size: 13px; }
+  .dialog-cover { width: min(760px, 100%); }
   .import-body { padding: 24px; }
   .import-body p { line-height: 1.5; color: var(--secondary-text-color); }
   .import-body input[type="file"] { margin: 8px 0; max-width: 100%; }
@@ -750,7 +941,7 @@ const STYLE = `
     .segmented.icons { margin-left: 0; }
     .side { display: none; }
     .body { flex-direction: column; padding: 16px; }
-    .cover { flex-basis: auto; width: 160px; align-self: center; }
+    .cover-col { flex-basis: auto; width: 160px; align-self: center; }
     .info-row { grid-template-columns: 120px 1fr; }
   }
 `;
