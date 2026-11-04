@@ -25,6 +25,34 @@
       "reauth_successful": "Nouvelle authentification réussie."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Export de la collection et jaquettes",
+        "description": "L'API My Movies ne fournit pas le nom des titres aux applications tierces. Exportez votre collection depuis l'application My Movies (CSV) et importez-la ici ; ré-importez-la après avoir ajouté des titres. Titres actuellement connus : {count}.",
+        "data": { "export_file": "Export de la collection (CSV)", "tmdb_api_key": "Clé API TMDB" },
+        "data_description": {
+          "export_file": "Le fichier CSV exporté par l'application My Movies. Laissez vide pour garder l'actuel.",
+          "tmdb_api_key": "Clé API TMDB (v3) gratuite et facultative, pour des jaquettes en haute résolution. Sans elle, les petites miniatures My Movies sont utilisées."
+        }
+      }
+    },
+    "error": {
+      "invalid_export": "Ce fichier n'est pas un export de collection My Movies.",
+      "invalid_tmdb_key": "TMDB a refusé cette clé API.",
+      "tmdb_unreachable": "Impossible de joindre TMDB pour vérifier la clé."
+    }
+  },
+  "issues": {
+    "catalog_missing": {
+      "title": "Importez l'export de votre collection My Movies",
+      "description": "Les {count} titres de {account} n'ont pas encore de nom. Exportez votre collection depuis l'application My Movies (CSV), puis importez-la dans les options de l'intégration My Movies."
+    },
+    "catalog_outdated": {
+      "title": "Ré-importez l'export de votre collection My Movies",
+      "description": "{count} titres de {account} ne figurent pas dans l'export importé. Exportez à nouveau votre collection depuis l'application My Movies et importez-la dans les options de l'intégration."
+    }
+  },
   "entity": {
     "sensor": {
       "titles": { "name": "Titres" },
@@ -33,6 +61,7 @@
   },
   "exceptions": {
     "title_not_found": { "message": "Aucun titre de la collection ne correspond à « {title} »." },
+    "title_ambiguous": { "message": "Plusieurs titres correspondent à « {title} » (numéros {numbers}) ; utilisez l'un de ces numéros." },
     "no_entry": { "message": "Aucun compte My Movies n'est chargé." },
     "several_entries": { "message": "Plusieurs comptes My Movies sont chargés ; précisez config_entry_id." },
     "api_error": { "message": "My Movies a refusé la requête : {error}" }
@@ -42,7 +71,7 @@
       "name": "Marquer comme vu",
       "description": "Enregistre un visionnage du titre dans My Movies.",
       "fields": {
-        "title": { "name": "Titre", "description": "ID du titre ou numéro dans la collection." },
+        "title": { "name": "Titre", "description": "Nom du titre, titre original, ID IMDb, numéro dans la collection ou ID du titre." },
         "notes": { "name": "Notes", "description": "Note facultative enregistrée avec le visionnage." },
         "config_entry_id": { "name": "Compte", "description": "Compte à utiliser s'il y en a plusieurs." }
       }
@@ -51,7 +80,14 @@
       "name": "Effacer le « vu »",
       "description": "Supprime tous les visionnages enregistrés du titre dans My Movies.",
       "fields": {
-        "title": { "name": "Titre", "description": "ID du titre ou numéro dans la collection." },
+        "title": { "name": "Titre", "description": "Nom du titre, titre original, ID IMDb, numéro dans la collection ou ID du titre." },
+        "config_entry_id": { "name": "Compte", "description": "Compte à utiliser s'il y en a plusieurs." }
+      }
+    },
+    "get_titles": {
+      "name": "Lister les titres",
+      "description": "Renvoie la collection avec les noms, ID IMDb, statuts « vu » et jaquettes.",
+      "fields": {
         "config_entry_id": { "name": "Compte", "description": "Compte à utiliser s'il y en a plusieurs." }
       }
     }

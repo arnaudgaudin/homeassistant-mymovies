@@ -25,6 +25,34 @@
       "reauth_successful": "Re-authentication was successful."
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Collection export and covers",
+        "description": "The My Movies API does not give the titles' names to third-party apps. Export your collection from the My Movies app (CSV) and import it here; re-import it after adding titles. Titles currently known: {count}.",
+        "data": { "export_file": "Collection export (CSV)", "tmdb_api_key": "TMDB API key" },
+        "data_description": {
+          "export_file": "The CSV file exported by the My Movies app. Leave empty to keep the current one.",
+          "tmdb_api_key": "Optional free TMDB API key (v3) for high-resolution posters. Without it, the small My Movies thumbnails are used."
+        }
+      }
+    },
+    "error": {
+      "invalid_export": "This file is not a My Movies collection export.",
+      "invalid_tmdb_key": "TMDB rejected this API key.",
+      "tmdb_unreachable": "Could not reach TMDB to check the key."
+    }
+  },
+  "issues": {
+    "catalog_missing": {
+      "title": "Import your My Movies collection export",
+      "description": "The {count} titles of {account} have no names yet. Export your collection from the My Movies app (CSV), then import it in the My Movies integration options."
+    },
+    "catalog_outdated": {
+      "title": "Re-import your My Movies collection export",
+      "description": "{count} titles of {account} are not in the imported export. Export your collection again from the My Movies app and import it in the integration options."
+    }
+  },
   "entity": {
     "sensor": {
       "titles": { "name": "Titles" },
@@ -33,6 +61,7 @@
   },
   "exceptions": {
     "title_not_found": { "message": "No title in the collection matches \"{title}\"." },
+    "title_ambiguous": { "message": "Several titles match \"{title}\" (collection numbers {numbers}); use one of the numbers." },
     "no_entry": { "message": "No My Movies account is loaded." },
     "several_entries": { "message": "Several My Movies accounts are loaded; set config_entry_id." },
     "api_error": { "message": "My Movies rejected the request: {error}" }
@@ -42,7 +71,7 @@
       "name": "Mark as watched",
       "description": "Logs a viewing of a title in My Movies.",
       "fields": {
-        "title": { "name": "Title", "description": "Title ID or collection number." },
+        "title": { "name": "Title", "description": "Title name, original title, IMDb ID, collection number or title ID." },
         "notes": { "name": "Notes", "description": "Optional note saved with the viewing." },
         "config_entry_id": { "name": "Account", "description": "Account to use when several are configured." }
       }
@@ -51,7 +80,14 @@
       "name": "Clear watched",
       "description": "Removes every logged viewing of a title in My Movies.",
       "fields": {
-        "title": { "name": "Title", "description": "Title ID or collection number." },
+        "title": { "name": "Title", "description": "Title name, original title, IMDb ID, collection number or title ID." },
+        "config_entry_id": { "name": "Account", "description": "Account to use when several are configured." }
+      }
+    },
+    "get_titles": {
+      "name": "Get titles",
+      "description": "Returns the collection with names, IMDb IDs, watched flags and posters.",
+      "fields": {
         "config_entry_id": { "name": "Account", "description": "Account to use when several are configured." }
       }
     }

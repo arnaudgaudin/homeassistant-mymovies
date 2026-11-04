@@ -7,6 +7,7 @@
   },
   "services": {
     "mark_watched": { "service": "mdi:eye-check" },
-    "clear_watched": { "service": "mdi:eye-off" }
+    "clear_watched": { "service": "mdi:eye-off" },
+    "get_titles": { "service": "mdi:format-list-bulleted" }
   }
 }

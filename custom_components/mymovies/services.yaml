@@ -2,7 +2,7 @@ mark_watched:
   fields:
     title:
       required: true
-      example: "42"
+      example: "Sin City"
       selector:
         text:
     notes:
@@ -17,9 +17,16 @@ clear_watched:
   fields:
     title:
       required: true
-      example: "42"
+      example: "Sin City"
       selector:
         text:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: mymovies
+
+get_titles:
+  fields:
     config_entry_id:
       selector:
         config_entry:
