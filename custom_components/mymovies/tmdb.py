@@ -31,6 +31,7 @@ class TmdbMatch:
     id: int
     overview: str = ""
     season: int | None = None  # a season of a series has its own posters
+    release_date: str = ""  # the film's (or series') first release, YYYY-MM-DD
 
 
 async def _get(session: aiohttp.ClientSession, path: str, params: dict[str, str]) -> dict:
@@ -61,7 +62,8 @@ async def async_find_imdb(
     )
     for kind, results in (("movie", "movie_results"), ("tv", "tv_results")):
         for result in data.get(results) or []:
-            return TmdbMatch(kind, result["id"], result.get("overview") or "")
+            date = result.get("release_date") or result.get("first_air_date") or ""
+            return TmdbMatch(kind, result["id"], result.get("overview") or "", release_date=date)
     return None
 
 
@@ -74,7 +76,9 @@ async def async_search_movie(
         params["year"] = str(year)
     data = await _get(session, "/search/movie", params)
     for result in data.get("results") or []:
-        return TmdbMatch("movie", result["id"], result.get("overview") or "")
+        return TmdbMatch(
+            "movie", result["id"], result.get("overview") or "", release_date=result.get("release_date") or ""
+        )
     return None
 
 

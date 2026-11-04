@@ -368,7 +368,7 @@ async def test_tmdb_lookup(hass: HomeAssistant) -> None:
 
     with (
         patch.object(tmdb, "async_find_imdb", AsyncMock(side_effect=lambda *a: tmdb.TmdbMatch("tv", 2407))),
-        patch.object(tmdb, "async_search_movie", AsyncMock(return_value=tmdb.TmdbMatch("movie", 9389))) as search,
+        patch.object(tmdb, "async_search_movie", AsyncMock(return_value=tmdb.TmdbMatch("movie", 9389, release_date="2006-03-16"))) as search,
         patch.object(tmdb, "async_posters", side_effect=posters),
         patch(f"{CLIENT}.async_get_titles", return_value=titles),
         patch(f"{CLIENT}.async_get_box_set_children", return_value={}),
@@ -380,6 +380,8 @@ async def test_tmdb_lookup(hass: HomeAssistant) -> None:
     assert covers[titles[0].id.lower()]["path"] == "/tv1.jpg"
     assert covers[titles[1].id.lower()]["path"] == "/tv2.jpg"
     assert covers[titles[2].id.lower()]["path"] == "/movie.jpg"
+    assert covers[titles[2].id.lower()]["release_date"] == "2006-03-16"
+    assert coordinator.describe(titles[2], details=True)["film_release_date"] == "2006-03-16"
     assert search.await_args.args[2] == "Renaissance"
 
 

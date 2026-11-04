@@ -16,7 +16,7 @@ const STRINGS = {
     boxSet: "Box set", markWatched: "Mark as watched", clearWatched: "Clear watched",
     close: "Close", director: "Director", cast: "Cast", genres: "Genres", runtime: "Runtime",
     rating: "Rating", personalRating: "Personal rating", parental: "Parental rating",
-    released: "Released", added: "Added", disc: "Disc", edition: "Edition",
+    released: "Released", discReleased: "Disc released", added: "Added", disc: "Disc", edition: "Edition",
     number: "Collection no.", group: "Group", inBoxSet: "In box set",
     contents: "Box set contents", loading: "Loading…", error: "Could not load the collection",
     empty: "No title matches", watched: "Watched", failed: "Action failed",
@@ -51,7 +51,7 @@ const STRINGS = {
     boxSet: "Coffret", markWatched: "Marquer comme vu", clearWatched: "Effacer le « vu »",
     close: "Fermer", director: "Réalisation", cast: "Avec", genres: "Genres", runtime: "Durée",
     rating: "Note", personalRating: "Note personnelle", parental: "Classification",
-    released: "Sortie", added: "Ajouté le", disc: "Support", edition: "Édition",
+    released: "Sortie", discReleased: "Sortie du disque", added: "Ajouté le", disc: "Support", edition: "Édition",
     number: "N° de collection", group: "Groupe", inBoxSet: "Dans le coffret",
     contents: "Contenu du coffret", loading: "Chargement…",
     error: "Impossible de charger la collection", empty: "Aucun titre ne correspond",
@@ -87,7 +87,8 @@ const SORT_KEYS = {
   personal_rating: (i) => i.personal_rating,
   runtime: (i) => i.runtime,
   year: (i) => i.year,
-  release_date: (i) => i.release_date || null,
+  // The film's release (TMDB), else its production year; not the disc's release.
+  release_date: (i) => i.film_release_date || (i.year ? `${i.year}-12-31` : null),
   parental_rating: (i) => i.parental_rating || null,
   added: (i) => i.added || null,
 };
@@ -678,7 +679,8 @@ class MyMoviesPanel extends HTMLElement {
             ${this._info(t.cast, (i.actors || []).slice(0, 8).join(", "))}
             ${this._info(t.rating, i.rating != null ? `★ ${i.rating}/10` : "")}
             ${this._info(t.personalRating, i.personal_rating != null ? `★ ${i.personal_rating}` : "")}
-            ${this._info(t.released, this._date(i.release_date))}
+            ${this._info(t.released, this._date(i.film_release_date))}
+            ${this._info(t.discReleased, this._date(i.release_date))}
             ${this._info(t.added, this._date(i.added))}
             ${this._info(t.number, i.child ? "" : i.collection_number)}
             ${this._info(t.group, i.group)}

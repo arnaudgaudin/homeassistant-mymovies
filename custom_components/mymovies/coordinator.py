@@ -37,8 +37,8 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-# Bumped when the way box-set films are found on TMDB changes, to look them up again.
-PARTS_VERSION = 2
+# Bumped when what is kept from TMDB changes, so that every title is looked up again once.
+LOOKUP_VERSION = 3
 
 # The API gives the watched flag of box-set films one by one: read them less often.
 CHILDREN_WATCHED_INTERVAL = timedelta(hours=6)
@@ -188,8 +188,7 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
                 films = films[:size]
             for part in films:
                 child_key = f"00000000-0000-0000-0001-{part['id']:012d}"
-                self.store.covers.setdefault(
-                    child_key,
+                self.store.covers[child_key] = (
                     {
                         "kind": "movie",
                         "id": part["id"],
@@ -197,7 +196,8 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
                         "width": 0,
                         "height": 0,
                         "overview": part["overview"],
-                    },
+                        "release_date": part["release_date"],
+                    }
                 )
                 data.box_sets.setdefault(key, []).append(
                     BoxSetChild(
@@ -337,20 +337,15 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
         todo: list[tuple[str, CollectionTitle | BoxSetChild]] = [
             (key, title)
             for key, title in data.titles.items()
-            if self.entry_for(title)
-            and (
-                key not in self.store.covers
-                or (
-                    self.store.covers[key].get("kind") == "collection"
-                    and self.store.covers[key].get("parts_version") != PARTS_VERSION
-                )
-            )
+            if self.entry_for(title) and (self.store.covers.get(key) or {}).get("v") != LOOKUP_VERSION
         ]
         todo += [
             (child.id.lower(), child)
             for children in data.box_sets.values()
             for child in children
-            if child.id.lower() not in data.child_titles and child.id.lower() not in self.store.covers
+            if child.id.lower() not in data.child_titles
+            and (self.store.covers.get(child.id.lower()) or {}).get("v") != LOOKUP_VERSION
+            and not child.id.startswith("00000000-0000-0000-0001-")  # TMDB collection films
         ]
         return todo
 
@@ -427,12 +422,17 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
         try:
             for key, item in self._tmdb_todo(data):
                 match = await self._async_match(session, api_key, key, item, data)
-                found: dict[str, Any] = {}
+                found: dict[str, Any] = {"v": LOOKUP_VERSION}
                 if match:
-                    found = {"kind": match.kind, "id": match.id, "season": match.season, "overview": match.overview}
+                    found |= {
+                        "kind": match.kind,
+                        "id": match.id,
+                        "season": match.season,
+                        "overview": match.overview,
+                        "release_date": match.release_date,
+                    }
                     if match.kind == "collection":
                         found["parts"] = await self._async_box_set_films(session, api_key, match, item, lang)
-                        found["parts_version"] = PARTS_VERSION
                     posters = await tmdb.async_posters(session, api_key, match, lang)
                     if best := tmdb.best_poster(posters, lang):
                         found.update(
@@ -559,6 +559,7 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             "edition": child.edition,
             "disc_type": child.disc_type,
             "description": (self.store.covers.get(key) or {}).get("overview", ""),
+            "film_release_date": (self.store.covers.get(key) or {}).get("release_date", ""),
             "watched": self._child_watched(child),
             "title_id": self.data.child_titles.get(key) if self.data else None,
         }
@@ -594,6 +595,7 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
                 data[name] = getattr(entry or default, name)
             if not data["description"]:
                 data["description"] = (self.store.covers.get(key) or {}).get("overview", "")
+            data["film_release_date"] = (self.store.covers.get(key) or {}).get("release_date", "")
             data["children"] = [self.describe_child(c) for c in children]
             data["box_set_id"] = self.data.box_of.get(key) if self.data else None
         else:
