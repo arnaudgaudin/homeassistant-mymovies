@@ -512,3 +512,18 @@ async def test_offline_box_sets(hass: HomeAssistant) -> None:
     assert coordinator.describe_child(matrix[1])["watched"] is True
     assert [c.title for c in data.box_sets[box_key]] == ["Jurassic World", "Fallen Kingdom"]  # no Rebirth
     assert coordinator.describe_child(data.box_sets[box_key][0])["poster"] == "https://image.tmdb.org/t/p/w342/jw.jpg"
+
+
+async def test_offline_when_every_call_is_refused(hass: HomeAssistant) -> None:
+    """The box-set call being refused too must not hide the titles' refusal."""
+    from custom_components.mymovies.api import MyMoviesError
+
+    entry = await _setup(hass)
+    coordinator = entry.runtime_data
+    coordinator.store.catalog = CATALOG
+    with (
+        patch(f"{CLIENT}.async_get_titles", side_effect=MyMoviesAuthError("refused")),
+        patch(f"{CLIENT}.async_get_box_set_children", side_effect=MyMoviesError("refused")),
+    ):
+        await coordinator.async_refresh()
+    assert coordinator.last_update_success and coordinator.offline

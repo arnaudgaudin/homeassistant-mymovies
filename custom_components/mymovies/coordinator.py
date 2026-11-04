@@ -91,10 +91,9 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
         self.offline = False
 
     async def _async_update_data(self) -> MyMoviesData:
+        # The titles first: a refusal there means My Movies closed its API.
         try:
-            titles, box_sets = await asyncio.gather(
-                self.client.async_get_titles(), self.client.async_get_box_set_children()
-            )
+            titles = await self.client.async_get_titles()
         except MyMoviesAuthError as err:
             if not self.store.catalog:
                 raise ConfigEntryAuthFailed(str(err)) from err
@@ -105,6 +104,11 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
         except MyMoviesError as err:
             raise UpdateFailed(str(err)) from err
         self.offline = False
+        try:
+            box_sets = await self.client.async_get_box_set_children()
+        except MyMoviesError as err:
+            _LOGGER.warning("Box sets not readable from My Movies: %s", err)
+            box_sets = {}
         by_id = {t.id.lower(): t for t in titles}
         await self._async_complete_box_sets(by_id, box_sets)
         data = MyMoviesData(titles=by_id, box_sets=box_sets)
