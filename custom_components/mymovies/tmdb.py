@@ -127,6 +127,17 @@ async def async_search_collection(
     return TmdbMatch("collection", best["id"], best.get("overview") or "")
 
 
+async def async_movie_collection(
+    session: aiohttp.ClientSession, api_key: str, title: str, language: str
+) -> int | None:
+    """ID of the collection the best movie match for a title belongs to."""
+    match = await async_search_movie(session, api_key, title, None, language)
+    if match is None:
+        return None
+    data = await _get(session, f"/movie/{match.id}", {"api_key": api_key, "language": language})
+    return (data.get("belongs_to_collection") or {}).get("id")
+
+
 async def async_collection_parts(
     session: aiohttp.ClientSession, api_key: str, collection_id: int, language: str
 ) -> list[dict[str, Any]]:

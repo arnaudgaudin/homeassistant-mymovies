@@ -527,3 +527,25 @@ async def test_offline_when_every_call_is_refused(hass: HomeAssistant) -> None:
     ):
         await coordinator.async_refresh()
     assert coordinator.last_update_success and coordinator.offline
+
+
+async def test_box_set_from_empty_collection(hass: HomeAssistant) -> None:
+    """An empty franchise collection falls back to the franchise film's collection."""
+    from custom_components.mymovies import tmdb
+
+    entry = await _setup(hass, {"tmdb_api_key": "k"})
+    coordinator = entry.runtime_data
+    title = _title(183)
+    coordinator.store.catalog = {183: CatalogEntry("Jurassic World : Trilogie", "Jurassic World: Trilogy", "JW", None, None)}
+    saga = [
+        {"id": 329, "title": "Jurassic Park", "original_title": "Jurassic Park", "release_date": "1993-06-11", "year": 1993, "poster": "/jp.jpg", "overview": ""},
+        {"id": 135397, "title": "Jurassic World", "original_title": "Jurassic World", "release_date": "2015-06-10", "year": 2015, "poster": "/jw.jpg", "overview": ""},
+        {"id": 351286, "title": "Jurassic World : Fallen Kingdom", "original_title": "Jurassic World: Fallen Kingdom", "release_date": "2018-06-06", "year": 2018, "poster": "/fk.jpg", "overview": ""},
+    ]
+    with (
+        patch.object(tmdb, "async_collection_parts", AsyncMock(side_effect=lambda s, k, cid, lang: [] if cid == 1760315 else saga)),
+        patch.object(tmdb, "async_movie_collection", AsyncMock(return_value=328)) as of_movie,
+    ):
+        films = await coordinator._async_box_set_films(None, "k", tmdb.TmdbMatch("collection", 1760315), title, "fr")
+    assert of_movie.await_args.args[2] == "Jurassic World"
+    assert [f["title"] for f in films] == ["Jurassic World", "Jurassic World : Fallen Kingdom"]

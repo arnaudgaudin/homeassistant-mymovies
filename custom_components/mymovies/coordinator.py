@@ -37,6 +37,9 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
+# Bumped when the way box-set films are found on TMDB changes, to look them up again.
+PARTS_VERSION = 2
+
 # The API gives the watched flag of box-set films one by one: read them less often.
 CHILDREN_WATCHED_INTERVAL = timedelta(hours=6)
 
@@ -332,7 +335,10 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             if self.entry_for(title)
             and (
                 key not in self.store.covers
-                or (self.store.covers[key].get("kind") == "collection" and "parts" not in self.store.covers[key])
+                or (
+                    self.store.covers[key].get("kind") == "collection"
+                    and self.store.covers[key].get("parts_version") != PARTS_VERSION
+                )
             )
         ]
         todo += [
@@ -345,6 +351,31 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
 
     def _tmdb_missing(self, data: MyMoviesData) -> bool:
         return bool(self.config_entry.options.get(CONF_TMDB_API_KEY)) and bool(self._tmdb_todo(data))
+
+    async def _async_box_set_films(
+        self, session: Any, api_key: str, match: tmdb.TmdbMatch, title: CollectionTitle, lang: str
+    ) -> list[dict[str, Any]]:
+        """Films of a box set's TMDB collection.
+
+        A collection named after the franchise can be empty ("Collection Jurassic
+        World"): then the films are taken from the collection of the franchise's
+        film (the Jurassic Park saga), keeping those named after the franchise.
+        """
+        parts = await tmdb.async_collection_parts(session, api_key, match.id, lang)
+        entry = self.entry_for(title)
+        if parts or not entry:
+            return parts
+        franchise = tmdb.franchise_name(entry.title)
+        collection_id = await tmdb.async_movie_collection(session, api_key, franchise, lang)
+        if collection_id is None:
+            return []
+        wanted = normalize_title(franchise)
+        return [
+            p
+            for p in await tmdb.async_collection_parts(session, api_key, collection_id, lang)
+            if normalize_title(p["title"]).startswith(wanted)
+            or normalize_title(p["original_title"]).startswith(wanted)
+        ]
 
     @staticmethod
     def _looks_like_box_set(entry: CatalogEntry) -> bool:
@@ -395,7 +426,8 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
                 if match:
                     found = {"kind": match.kind, "id": match.id, "season": match.season, "overview": match.overview}
                     if match.kind == "collection":
-                        found["parts"] = await tmdb.async_collection_parts(session, api_key, match.id, lang)
+                        found["parts"] = await self._async_box_set_films(session, api_key, match, item, lang)
+                        found["parts_version"] = PARTS_VERSION
                     posters = await tmdb.async_posters(session, api_key, match, lang)
                     if best := tmdb.best_poster(posters, lang):
                         found.update(
