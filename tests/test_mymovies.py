@@ -557,3 +557,19 @@ async def test_box_set_from_empty_collection(hass: HomeAssistant) -> None:
         films = await coordinator._async_box_set_films(None, "k", tmdb.TmdbMatch("collection", 1760315), title, "fr")
     assert of_movie.await_args.args[2] == "Jurassic World"
     assert [f["title"] for f in films] == ["Jurassic World", "Jurassic World : Fallen Kingdom"]
+
+
+async def test_series_season_at_disc_release(hass: HomeAssistant) -> None:
+    """A series disc without a season number shows the season aired when it came out."""
+    from custom_components.mymovies import tmdb
+
+    entry = await _setup(hass, {"tmdb_api_key": "k"})
+    coordinator = entry.runtime_data
+    coordinator.store.catalog = {1: CatalogEntry("Bref: L'intégrale", "Bref", "Bref", "tt2044128", 2017, release_date="2012-10-22")}
+    seasons = [{"season": 1, "air_date": "2011-08-29"}, {"season": 2, "air_date": "2025-02-14"}]
+    with patch.object(tmdb, "async_tv_seasons", AsyncMock(return_value=seasons)):
+        season = await coordinator._async_season_at_release(None, "k", tmdb.TmdbMatch("tv", 60715), _title(1), "fr")
+        assert season == 1
+        # A series whose every season was out: its series poster is fine.
+        coordinator.store.catalog[1].release_date = "2025-06-01"
+        assert await coordinator._async_season_at_release(None, "k", tmdb.TmdbMatch("tv", 60715), _title(1), "fr") is None

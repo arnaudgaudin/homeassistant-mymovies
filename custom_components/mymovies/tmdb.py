@@ -145,6 +145,18 @@ async def async_search_collection(
     return TmdbMatch("collection", best["id"], best.get("overview") or "")
 
 
+async def async_tv_seasons(
+    session: aiohttp.ClientSession, api_key: str, tv_id: int, language: str
+) -> list[dict[str, Any]]:
+    """Seasons of a series (specials excluded) with their first air date."""
+    data = await _get(session, f"/tv/{tv_id}", {"api_key": api_key, "language": language})
+    return [
+        {"season": s["season_number"], "air_date": s.get("air_date") or ""}
+        for s in data.get("seasons") or []
+        if s.get("season_number")
+    ]
+
+
 async def async_movie_collection(
     session: aiohttp.ClientSession, api_key: str, title: str, language: str
 ) -> int | None:

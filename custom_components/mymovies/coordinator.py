@@ -352,6 +352,26 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
     def _tmdb_missing(self, data: MyMoviesData) -> bool:
         return bool(self.config_entry.options.get(CONF_TMDB_API_KEY)) and bool(self._tmdb_todo(data))
 
+    async def _async_season_at_release(
+        self,
+        session: Any,
+        api_key: str,
+        match: tmdb.TmdbMatch,
+        item: CollectionTitle | BoxSetChild,
+        lang: str,
+    ) -> int | None:
+        """Season of a series disc that names none: the last one aired when the disc came out.
+
+        "Bref: L'intégrale" (2012) holds season 1; the series poster now shows the 2025
+        season 2.
+        """
+        entry = self.entry_for(item) if isinstance(item, CollectionTitle) else None
+        if not entry or not entry.release_date:
+            return None
+        seasons = await tmdb.async_tv_seasons(session, api_key, match.id, lang)
+        aired = [s["season"] for s in seasons if s["air_date"] and s["air_date"] <= entry.release_date]
+        return max(aired) if aired and len(aired) < len(seasons) else None
+
     async def _async_box_set_films(
         self, session: Any, api_key: str, match: tmdb.TmdbMatch, title: CollectionTitle, lang: str
     ) -> list[dict[str, Any]]:
@@ -423,6 +443,8 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             for key, item in self._tmdb_todo(data):
                 match = await self._async_match(session, api_key, key, item, data)
                 found: dict[str, Any] = {"v": LOOKUP_VERSION}
+                if match and match.kind == "tv" and match.season is None:
+                    match.season = await self._async_season_at_release(session, api_key, match, item, lang)
                 if match:
                     found |= {
                         "kind": match.kind,
