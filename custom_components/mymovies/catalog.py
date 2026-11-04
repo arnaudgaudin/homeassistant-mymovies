@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import csv
 import re
+import unicodedata
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
@@ -44,6 +45,7 @@ class CatalogEntry:
     release_date: str = ""  # YYYY-MM-DD
     added: str = ""  # YYYY-MM-DD
     disc_type: str = ""
+    three_d: bool = False
     media_type: str = ""
     group: str = ""
     edition: str = ""
@@ -51,6 +53,12 @@ class CatalogEntry:
     director: str = ""
     actors: list[str] = field(default_factory=list)
     description: str = ""
+
+
+def normalize_title(text: str | None) -> str:
+    """Case- and accent-insensitive form of a title, for matching."""
+    decomposed = unicodedata.normalize("NFKD", (text or "").casefold())
+    return "".join(c for c in decomposed if not unicodedata.combining(c)).strip()
 
 
 def _minutes(value: str) -> int | None:
@@ -109,6 +117,7 @@ def parse_export(path: Path) -> dict[int, CatalogEntry]:
                 release_date=col.get("Release Date", ""),
                 added=col.get("Added Date", ""),
                 disc_type=col.get("Disc Type", ""),
+                three_d=col.get("3D", "").lower() == "yes",
                 media_type=col.get("Media Type", ""),
                 group=col.get("Group", ""),
                 edition=col.get("Edition", ""),

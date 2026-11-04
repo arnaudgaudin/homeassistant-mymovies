@@ -61,16 +61,17 @@ def test_parse_export(tmp_path: Path) -> None:
     path = tmp_path / "export.csv"
     path.write_text(
         "\ufeffCollection Number,Title,Original Title,Sort Title,IMDB Id,Production Year,"
-        "Running Time,Rating,Genres,Actors,Description\n"
+        "Running Time,Rating,Genres,Actors,Description,3D\n"
         '1,"Le Seigneur des anneaux","The Lord of the Rings","Seigneur",tt0120737,2001,'
-        '2:58,8.9," Fantasy, Adventure"," Elijah Wood, Ian McKellen","Un anneau.; Une quête.; ; Een ring."\n'
-        '2,"Trilogie","Trilogie","Trilogie",tt0000000,,,,,,-\n',
+        '2:58,8.9," Fantasy, Adventure"," Elijah Wood, Ian McKellen","Un anneau.; Une quête.; ; Een ring.",yes\n'
+        '2,"Trilogie","Trilogie","Trilogie",tt0000000,,,,,,-,no\n',
         encoding="utf-8",
     )
     catalog = parse_export(path)
     assert catalog[1].original_title == "The Lord of the Rings"
     assert catalog[1].imdb == "tt0120737" and catalog[1].year == 2001
     assert catalog[1].runtime == 178 and catalog[1].rating == 8.9
+    assert catalog[1].three_d and not catalog[2].three_d
     assert catalog[1].genres == ["Fantasy", "Adventure"]
     assert catalog[1].actors == ["Elijah Wood", "Ian McKellen"]
     assert catalog[1].description == "Un anneau.\nUne quête."
@@ -262,3 +263,34 @@ async def test_import_from_panel(hass: HomeAssistant, hass_ws_client, hass_admin
     await client.send_json_auto_id({"type": "mymovies/import_export", "file_id": "abc"})
     msg = await client.receive_json()
     assert not msg["success"] and msg["error"]["code"] == "unauthorized"
+
+
+async def test_box_set_discs_owned_as_titles(hass: HomeAssistant, hass_ws_client) -> None:
+    """A box-set disc also scanned as its own title is shown and resolved through that title."""
+    titles = [*TITLES, _title(5, watched=True)]
+    catalog = {**CATALOG, 5: CatalogEntry("Matrix Reloaded", "The Matrix Reloaded", "Matrix 2", "tt0234215", 2003)}
+    entry = await _setup(hass)
+    coordinator = entry.runtime_data
+    coordinator.store.catalog = catalog
+    with (
+        patch(f"{CLIENT}.async_get_titles", return_value=titles),
+        patch(f"{CLIENT}.async_get_box_set_children", return_value=BOX_SETS),
+    ):
+        await coordinator.async_refresh()
+    disc = titles[4].id.lower()
+    box = titles[3].id.lower()
+    assert coordinator.data.child_titles == {"child-2": disc}
+    assert coordinator.data.box_of == {disc: box}
+
+    with patch.object(coordinator.client, "async_mark_watched", AsyncMock()) as mark, patch(
+        f"{CLIENT}.async_get_titles", return_value=titles
+    ), patch(f"{CLIENT}.async_get_box_set_children", return_value=BOX_SETS):
+        await hass.services.async_call(DOMAIN, "mark_watched", {"title": "matrix reloaded"}, blocking=True)
+    assert mark.await_args.args[0] == titles[4].id  # the title, not the catalog film
+
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id({"type": "mymovies/collection"})
+    result = {t["collection_number"]: t for t in (await client.receive_json())["result"]["titles"]}
+    assert result[5]["box_set_id"] == box
+    reloaded = next(c for c in result[4]["children"] if c["id"] == "child-2")
+    assert reloaded["title_id"] == disc and reloaded["watched"] is True

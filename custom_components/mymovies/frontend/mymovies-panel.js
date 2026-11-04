@@ -9,9 +9,9 @@
 const STRINGS = {
   en: {
     search: "Search", ascending: "Ascending", descending: "Descending",
-    allTypes: "All types", movies: "Movies", series: "TV series", documentaries: "Documentaries",
+    allTypes: "All types", allGenres: "All genres", allDiscs: "All discs", threeD: "Blu-ray 3D", movies: "Movies", series: "TV series", documentaries: "Documentaries",
     segWatched: "Watched", segAll: "All", segUnwatched: "Not watched", watchedFilter: "Watched filter",
-    expand: "Expand box sets", refresh: "Refresh", titles: "titles", films: "films",
+    boxSets: "Box sets", collapsed: "Grouped", expanded: "Expanded", refresh: "Refresh", titles: "titles", films: "films",
     grid: "Wall", list: "List", view: "View",
     boxSet: "Box set", markWatched: "Mark as watched", clearWatched: "Clear watched",
     close: "Close", director: "Director", cast: "Cast", genres: "Genres", runtime: "Runtime",
@@ -20,6 +20,10 @@ const STRINGS = {
     number: "Collection no.", group: "Group", inBoxSet: "In box set",
     contents: "Box set contents", loading: "Loading…", error: "Could not load the collection",
     empty: "No title matches", watched: "Watched", failed: "Action failed",
+    officialSite: "Official My Movies website",
+    creditCollection: "Collection data", creditCovers: "Covers",
+    tmdbNotice: "This product uses the TMDB API but is not endorsed or certified by TMDB.",
+    unofficial: "Unofficial integration, not affiliated with or endorsed by My Movies.",
     importCsv: "Import the collection export",
     importTitle: "Import the My Movies export",
     importText: "In the My Movies app, export your collection to a CSV file, then choose it here. It gives the titles their names, IMDb IDs and details; the watched state always comes from My Movies.",
@@ -32,9 +36,9 @@ const STRINGS = {
   },
   fr: {
     search: "Rechercher", ascending: "Croissant", descending: "Décroissant",
-    allTypes: "Tous les types", movies: "Films", series: "Séries", documentaries: "Documentaires",
+    allTypes: "Tous les types", allGenres: "Tous les genres", allDiscs: "Tous les supports", threeD: "Blu-ray 3D", movies: "Films", series: "Séries", documentaries: "Documentaires",
     segWatched: "Vus", segAll: "Tous", segUnwatched: "Non vus", watchedFilter: "Filtre vu",
-    expand: "Déplier les coffrets", refresh: "Actualiser", titles: "titres", films: "films",
+    boxSets: "Coffrets", collapsed: "Repliés", expanded: "Dépliés", refresh: "Actualiser", titles: "titres", films: "films",
     grid: "Mur", list: "Liste", view: "Affichage",
     boxSet: "Coffret", markWatched: "Marquer comme vu", clearWatched: "Effacer le « vu »",
     close: "Fermer", director: "Réalisation", cast: "Avec", genres: "Genres", runtime: "Durée",
@@ -44,6 +48,10 @@ const STRINGS = {
     contents: "Contenu du coffret", loading: "Chargement…",
     error: "Impossible de charger la collection", empty: "Aucun titre ne correspond",
     watched: "Vu", failed: "L'action a échoué",
+    officialSite: "Site officiel de My Movies",
+    creditCollection: "Données de la collection", creditCovers: "Jaquettes",
+    tmdbNotice: "Ce produit utilise l'API TMDB mais n'est ni approuvé ni certifié par TMDB.",
+    unofficial: "Intégration non officielle, ni affiliée à My Movies ni approuvée par My Movies.",
     importCsv: "Importer l'export de la collection",
     importTitle: "Importer l'export My Movies",
     importText: "Dans l'application My Movies, exportez votre collection en fichier CSV, puis choisissez-le ici. Il donne aux titres leur nom, leur ID IMDb et leurs détails ; le statut « vu » vient toujours de My Movies.",
@@ -69,6 +77,17 @@ const SORT_KEYS = {
 };
 
 const TYPES = { movies: "Movie", series: "TV Serie", documentaries: "Documentary" };
+// My Movies genres are English; French labels for the French interface.
+const GENRES_FR = {
+  Action: "Action", Adventure: "Aventure", Animation: "Animation", Anime: "Anime",
+  Biography: "Biographie", Comedy: "Comédie", Crime: "Policier", Documentary: "Documentaire",
+  Drama: "Drame", Family: "Famille", Fantasy: "Fantastique", "Film-Noir": "Film noir",
+  History: "Histoire", Horror: "Horreur", "Martial Arts": "Arts martiaux", Music: "Musique",
+  Musical: "Comédie musicale", Mystery: "Mystère", Other: "Autre", Romance: "Romance",
+  "Science-Fiction": "Science-fiction", Sport: "Sport", Sports: "Sport",
+  "Suspense/Thriller": "Thriller", Thriller: "Thriller", Television: "Télévision",
+  War: "Guerre", Western: "Western",
+};
 const STATE_KEY = "mymovies-panel";
 const icon = (path) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`;
 const CHECK = icon("M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z");
@@ -89,7 +108,7 @@ const norm = (value) =>
   String(value ?? "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
 function loadState() {
-  const defaults = { sort: "title", dir: "asc", type: "all", watched: "all", expand: false, view: "grid", q: "" };
+  const defaults = { sort: "title", dir: "asc", type: "all", genre: "all", disc: "all", watched: "all", expand: false, view: "grid", q: "" };
   try {
     return { ...defaults, ...JSON.parse(localStorage.getItem(STATE_KEY) || "{}"), q: "" };
   } catch (err) {
@@ -148,18 +167,61 @@ class MyMoviesPanel extends HTMLElement {
     } catch (err) {
       this._error = err.message || String(err);
     }
+    this._renderDiscOptions();
+    this._renderGenreOptions();
     this._renderGrid();
     if (this._dialog?.kind === "title") this._renderDialog(false);
   }
 
+  _genre(name) {
+    return this._lang === "fr" ? GENRES_FR[name] || name : name;
+  }
+
+  _renderGenreOptions() {
+    // Offer the genres present in the collection, sorted by their displayed name.
+    const select = this.shadowRoot.getElementById("genre");
+    if (!select || !this._titles) return;
+    const genres = [...new Set(this._titles.flatMap((t) => t.genres || []))];
+    genres.sort((a, b) => this._genre(a).localeCompare(this._genre(b), this._lang));
+    if (this._state.genre !== "all" && !genres.includes(this._state.genre)) this._state.genre = "all";
+    select.innerHTML = ["all", ...genres]
+      .map((g) => `<option value="${esc(g)}" ${this._state.genre === g ? "selected" : ""}>${esc(g === "all" ? this._t.allGenres : this._genre(g))}</option>`)
+      .join("");
+  }
+
+  _renderDiscOptions() {
+    // Offer the disc types present in the collection, plus 3D when some titles are.
+    const select = this.shadowRoot.getElementById("disc");
+    if (!select || !this._titles) return;
+    const titles = this._titles.flatMap((t) => [t, ...(t.children || [])]);
+    const types = [...new Set(titles.map((t) => t.disc_type).filter(Boolean))].sort();
+    const values = ["all", ...types, ...(titles.some((t) => t.three_d) ? ["3d"] : [])];
+    if (!values.includes(this._state.disc)) this._state.disc = "all";
+    const label = (v) => (v === "all" ? this._t.allDiscs : v === "3d" ? this._t.threeD : v);
+    select.innerHTML = values
+      .map((v) => `<option value="${esc(v)}" ${this._state.disc === v ? "selected" : ""}>${esc(label(v))}</option>`)
+      .join("");
+  }
+
   // ---- data -------------------------------------------------------------
 
+  _byId() {
+    return new Map((this._titles || []).map((t) => [t.id.toLowerCase(), t]));
+  }
+
   _allItems() {
+    // Discs of a box set scanned as their own titles appear only in place of their
+    // box set (expanded), never next to it.
+    const byId = this._byId();
     const items = [];
     for (const t of this._titles || []) {
+      if (t.box_set_id && byId.has(t.box_set_id)) continue;
       const children = t.children || [];
       if (this._state.expand && children.length) {
-        for (const c of children) items.push(this._childItem(t, c));
+        for (const c of children) {
+          const own = c.title_id && byId.get(c.title_id);
+          items.push(own ? { ...own, key: `t:${own.id}`, parent: t } : this._childItem(t, c));
+        }
       } else {
         items.push({ ...t, key: `t:${t.id}` });
       }
@@ -185,8 +247,9 @@ class MyMoviesPanel extends HTMLElement {
   }
 
   _findItem(key) {
+    const byId = this._byId();
     for (const t of this._titles || []) {
-      if (`t:${t.id}` === key) return { ...t, key };
+      if (`t:${t.id}` === key) return { ...t, key, parent: (t.box_set_id && byId.get(t.box_set_id)) || undefined };
       for (const c of t.children || []) {
         if (`c:${c.id}` === key) return this._childItem(t, c);
       }
@@ -201,6 +264,9 @@ class MyMoviesPanel extends HTMLElement {
     const collator = new Intl.Collator(this._lang, { numeric: true, sensitivity: "base" });
     const items = this._allItems().filter((i) => {
       if (st.type !== "all" && i.media_type !== TYPES[st.type]) return false;
+      if (st.genre !== "all" && !(i.genres || []).includes(st.genre)) return false;
+      if (st.disc === "3d" && !i.three_d) return false;
+      if (st.disc !== "all" && st.disc !== "3d" && i.disc_type !== st.disc) return false;
       if (st.watched === "watched" && !i.watched) return false;
       if (st.watched === "unwatched" && i.watched) return false;
       if (q) {
@@ -256,7 +322,7 @@ class MyMoviesPanel extends HTMLElement {
       <style>${STYLE}</style>
       <div class="header">
         <span class="menu"></span>
-        <div class="title">My Movies</div>
+        <div class="title">My Movies <a class="source" href="https://www.mymovies.dk" target="_blank" rel="noopener noreferrer" title="${esc(t.officialSite)}">mymovies.dk ↗</a></div>
         <div class="count"></div>
         ${isAdmin ? `<button class="icon" id="import" title="${esc(t.importCsv)}" aria-label="${esc(t.importCsv)}">${UPLOAD}</button>` : ""}
         <button class="icon" id="refresh" title="${esc(t.refresh)}" aria-label="${esc(t.refresh)}">${REFRESH}</button>
@@ -271,15 +337,24 @@ class MyMoviesPanel extends HTMLElement {
           ${option("all", t.allTypes, st.type)}${option("movies", t.movies, st.type)}
           ${option("series", t.series, st.type)}${option("documentaries", t.documentaries, st.type)}
         </select></span>
+        <span class="select"><select id="genre" aria-label="${esc(t.allGenres)}">${option("all", t.allGenres, "all")}</select></span>
+        <span class="select"><select id="disc" aria-label="${esc(t.allDiscs)}">${option("all", t.allDiscs, "all")}</select></span>
         <div class="segmented" id="watched" role="radiogroup" aria-label="${esc(t.watchedFilter)}">
           ${seg("watched", "watched", esc(t.segWatched), st.watched)}${seg("watched", "all", esc(t.segAll), st.watched)}${seg("watched", "unwatched", esc(t.segUnwatched), st.watched)}
         </div>
-        <label class="check"><input id="expand" type="checkbox" ${st.expand ? "checked" : ""} /> ${esc(t.expand)}</label>
+        <div class="segmented" id="expand" role="radiogroup" aria-label="${esc(t.boxSets)}">
+          <span class="seg-label">${esc(t.boxSets)}</span>${seg("expand", "collapsed", esc(t.collapsed), st.expand ? "expanded" : "collapsed")}${seg("expand", "expanded", esc(t.expanded), st.expand ? "expanded" : "collapsed")}
+        </div>
         <div class="segmented icons" id="view" role="radiogroup" aria-label="${esc(t.view)}">
           ${seg("view", "grid", GRID, st.view, `title="${esc(t.grid)}" aria-label="${esc(t.grid)}"`)}${seg("view", "list", LIST, st.view, `title="${esc(t.list)}" aria-label="${esc(t.list)}"`)}
         </div>
       </div>
       <div class="items ${st.view}" id="grid"><div class="message">${esc(t.loading)}</div></div>
+      <footer class="credits">
+        ${esc(t.creditCollection)} : <a href="https://www.mymovies.dk" target="_blank" rel="noopener noreferrer">My Movies</a>
+        · ${esc(t.creditCovers)} : <a href="https://www.themoviedb.org" target="_blank" rel="noopener noreferrer">TMDB</a>.
+        ${esc(t.tmdbNotice)} ${esc(t.unofficial)}
+      </footer>
       <div id="dialog"></div>`;
 
     this._menu = document.createElement("ha-menu-button");
@@ -293,7 +368,7 @@ class MyMoviesPanel extends HTMLElement {
       this._saveState();
       this._renderGrid();
     };
-    const segmented = (id, attr) =>
+    const segmented = (id, attr, toState = (value) => value) =>
       $(id).addEventListener("click", (ev) => {
         const btn = ev.target.closest(`[data-${attr}]`);
         if (!btn) return;
@@ -301,14 +376,16 @@ class MyMoviesPanel extends HTMLElement {
           b.classList.toggle("active", b === btn);
           b.setAttribute("aria-checked", String(b === btn));
         }
-        update({ [attr]: btn.dataset[attr] });
+        update({ [attr]: toState(btn.dataset[attr]) });
       });
     $("q").addEventListener("input", (ev) => update({ q: ev.target.value }));
     $("sort").addEventListener("change", (ev) => update({ sort: ev.target.value }));
     $("type").addEventListener("change", (ev) => update({ type: ev.target.value }));
-    $("expand").addEventListener("change", (ev) => update({ expand: ev.target.checked }));
+    $("disc").addEventListener("change", (ev) => update({ disc: ev.target.value }));
+    $("genre").addEventListener("change", (ev) => update({ genre: ev.target.value }));
     segmented("watched", "watched");
     segmented("view", "view");
+    segmented("expand", "expand", (value) => value === "expanded");
     $("dir").addEventListener("click", (ev) => {
       update({ dir: this._state.dir === "asc" ? "desc" : "asc" });
       const btn = ev.currentTarget;
@@ -345,7 +422,7 @@ class MyMoviesPanel extends HTMLElement {
 
   _tag(i) {
     const count = i.children?.length;
-    if (i.child) return `<span class="tag">${esc(i.parent.title || "")}</span>`;
+    if (i.parent) return `<span class="tag">${esc(i.parent.title || "")}</span>`;
     if (count) return `<span class="tag">${esc(this._t.boxSet)} · ${count} ${esc(this._t.films)}</span>`;
     return "";
   }
@@ -363,8 +440,8 @@ class MyMoviesPanel extends HTMLElement {
   _row(i) {
     const t = this._t;
     const title = i.title || `#${i.collection_number}`;
-    const meta = [this._runtime(i.runtime), i.disc_type, i.parental_rating, i.edition].filter(Boolean);
-    const people = [i.director, (i.genres || []).join(", ")].filter(Boolean);
+    const meta = [this._runtime(i.runtime), i.disc_type, i.three_d ? "3D" : "", i.parental_rating, i.edition].filter(Boolean);
+    const people = [i.director, (i.genres || []).map((g) => this._genre(g)).join(", ")].filter(Boolean);
     const side = [
       i.rating != null ? `★ ${i.rating}` : "",
       i.child ? "" : `#${i.collection_number}`,
@@ -378,7 +455,7 @@ class MyMoviesPanel extends HTMLElement {
           ${i.original_title && i.original_title !== title ? `<span class="line-sub">${esc(i.original_title)}</span>` : ""}
           ${meta.length ? `<span class="line-meta">${meta.map(esc).join(" · ")}</span>` : ""}
           ${people.length ? `<span class="line-meta">${people.map(esc).join(" · ")}</span>` : ""}
-          ${i.child ? `<span class="line-meta">${esc(t.inBoxSet)} : ${esc(i.parent.title || "")}</span>` : ""}
+          ${i.parent ? `<span class="line-meta">${esc(t.inBoxSet)} : ${esc(i.parent.title || "")}</span>` : ""}
           ${!i.child && i.children?.length ? `<span class="line-meta">${esc(t.boxSet)} · ${i.children.length} ${esc(t.films)}</span>` : ""}
         </span>
         <span class="side">${side.map((s) => `<span>${esc(s)}</span>`).join("")}</span>
@@ -450,7 +527,7 @@ class MyMoviesPanel extends HTMLElement {
     const i = this._findItem(this._dialog.key);
     if (!i) return null;
     const title = i.title || `#${i.collection_number}`;
-    const meta = [i.year, this._runtime(i.runtime), i.parental_rating, i.disc_type, i.edition].filter(Boolean);
+    const meta = [i.year, this._runtime(i.runtime), i.parental_rating, i.disc_type, i.three_d ? "3D" : "", i.edition].filter(Boolean);
     const children = !i.child ? i.children || [] : [];
     return `
       <div class="body">
@@ -459,7 +536,7 @@ class MyMoviesPanel extends HTMLElement {
           <h2>${esc(title)}</h2>
           ${i.original_title && i.original_title !== title ? `<div class="original">${esc(i.original_title)}</div>` : ""}
           <div class="meta">${meta.map(esc).join(" · ")}</div>
-          ${i.genres?.length ? `<div class="chips">${i.genres.map((g) => `<span>${esc(g)}</span>`).join("")}</div>` : ""}
+          ${i.genres?.length ? `<div class="chips">${i.genres.map((g) => `<span>${esc(this._genre(g))}</span>`).join("")}</div>` : ""}
           ${i.description ? `<p class="description">${esc(paragraphs(i.description))}</p>` : ""}
           <div class="info-rows">
             ${this._info(t.director, i.director)}
@@ -471,18 +548,21 @@ class MyMoviesPanel extends HTMLElement {
             ${this._info(t.number, i.child ? "" : i.collection_number)}
             ${this._info(t.group, i.group)}
           </div>
-          ${i.child ? `<div class="info-rows"><div class="info-row"><span>${esc(t.inBoxSet)}</span><a href="#" data-open="t:${esc(i.parent.id)}">${esc(i.parent.title || "")}</a></div></div>` : ""}
+          ${i.parent ? `<div class="info-rows"><div class="info-row"><span>${esc(t.inBoxSet)}</span><a href="#" data-open="t:${esc(i.parent.id)}">${esc(i.parent.title || "")}</a></div></div>` : ""}
           ${children.length ? `
             <h3>${esc(t.contents)}</h3>
             <div class="children">
-              ${children.map((c) => `
-                <button class="mini" data-open="c:${esc(c.id)}" title="${esc(c.title)}">
+              ${children.map((c) => {
+                const own = c.title_id && this._byId().get(c.title_id);
+                return `
+                <button class="mini" data-open="${own ? `t:${esc(own.id)}` : `c:${esc(c.id)}`}" title="${esc(c.title)}">
                   <span class="mini-cover">
                     ${c.poster ? `<img loading="lazy" src="${esc(c.poster)}" alt="" />` : `<div class="noposter">${esc(c.title)}</div>`}
                     ${c.watched ? `<span class="badge small" title="${esc(t.watched)}">${CHECK}</span>` : ""}
                   </span>
                   <span>${esc(c.title)}${c.year ? ` (${esc(c.year)})` : ""}</span>
-                </button>`).join("")}
+                </button>`;
+              }).join("")}
             </div>` : ""}
           <div class="actions">
             ${this._dialog.error ? `<span class="error">${esc(t.failed)} : ${esc(this._dialog.error)}</span>` : ""}
@@ -568,10 +648,14 @@ const STYLE = `
   button { font: inherit; color: inherit; }
   .header { display: flex; align-items: center; gap: 4px; height: var(--header-height, 56px); padding: 0 8px 0 12px; background: var(--app-header-background-color, var(--primary-color)); color: var(--app-header-text-color, #fff); position: sticky; top: 0; z-index: 2; }
   .header .title { font-size: 20px; flex: 1; margin-left: 4px; }
+  .header .source { margin-left: 8px; font-size: 12px; color: inherit; opacity: 0.7; text-decoration: none; white-space: nowrap; }
+  .header .source:hover { opacity: 1; text-decoration: underline; }
+  .credits { padding: 8px 16px 24px; font-size: 12px; line-height: 1.5; color: var(--secondary-text-color); text-align: center; }
+  .credits a { color: inherit; }
   .header .count { opacity: 0.85; font-size: 14px; margin-right: 8px; }
   .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 16px; }
   .toolbar input[type="search"], .toolbar select { height: 36px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color); font-size: 14px; box-sizing: border-box; }
-  .toolbar input[type="search"] { flex: 0 1 200px; min-width: 120px; }
+  .toolbar input[type="search"] { flex: 0 1 260px; min-width: 140px; }
   /* Own chevron: the native arrow of macOS sits against the border. */
   .select { position: relative; display: inline-flex; flex: none; }
   .select::after { content: ""; position: absolute; right: 10px; top: 50%; width: 18px; height: 18px; margin-top: -9px; pointer-events: none; background: var(--secondary-text-color);
@@ -588,6 +672,7 @@ const STYLE = `
   .segmented { display: inline-flex; flex: none; padding: 2px; border-radius: 10px; border: 1px solid var(--divider-color); background: var(--card-background-color); }
   .segmented button { height: 30px; padding: 0 12px; border: none; border-radius: 8px; background: transparent; cursor: pointer; font-size: 13px; white-space: nowrap; color: var(--secondary-text-color); transition: background 0.15s, color 0.15s; }
   .segmented button.active { background: var(--primary-color); color: var(--text-primary-color, #fff); }
+  .seg-label { align-self: center; padding: 0 8px 0 10px; font-size: 13px; color: var(--secondary-text-color); white-space: nowrap; }
   .segmented.icons { margin-left: auto; }
   .segmented.icons button { width: 36px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
   .segmented.icons svg { width: 18px; height: 18px; }

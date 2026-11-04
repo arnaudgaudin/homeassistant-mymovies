@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import unicodedata
-
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntryState
@@ -20,6 +18,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.util import dt as dt_util
 
 from .api import BoxSetChild, CollectionTitle, MyMoviesError
+from .catalog import normalize_title as _norm
 from .const import ATTR_NOTES, ATTR_TITLE, DOMAIN
 from .coordinator import MyMoviesConfigEntry
 
@@ -32,12 +31,6 @@ _BASE = {vol.Required(ATTR_TITLE): cv.string, **_ACCOUNT}
 MARK_SCHEMA = vol.Schema({**_BASE, vol.Optional(ATTR_NOTES, default=""): cv.string})
 CLEAR_SCHEMA = vol.Schema(_BASE)
 GET_TITLES_SCHEMA = vol.Schema(_ACCOUNT)
-
-
-def _norm(text: str) -> str:
-    """Case- and accent-insensitive form of a title."""
-    decomposed = unicodedata.normalize("NFKD", text.casefold())
-    return "".join(c for c in decomposed if not unicodedata.combining(c)).strip()
 
 
 def _get_entry(hass: HomeAssistant, call: ServiceCall) -> MyMoviesConfigEntry:
@@ -58,10 +51,12 @@ def _resolve(entry: MyMoviesConfigEntry, ref: str) -> CollectionTitle | BoxSetCh
     """Find a title or a box-set film by ID, collection number, IMDb ID or (original) title."""
     coordinator = entry.runtime_data
     titles = coordinator.data.titles
+    # Films of box sets also owned as their own title are reached through that title.
     films = [
         (child, titles.get(parent))
         for parent, children in coordinator.data.box_sets.items()
         for child in children
+        if child.id.lower() not in coordinator.data.child_titles
     ]
     ref = ref.strip()
     key = ref.lower()

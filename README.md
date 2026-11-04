@@ -116,8 +116,15 @@ python3 -m venv .venv && .venv/bin/pip install pytest-homeassistant-custom-compo
 
 ## Credits
 
-Posters are provided by [TMDB](https://www.themoviedb.org).
-This product uses the TMDB API but is not endorsed or certified by TMDB.
+- Collection data comes from [My Movies](https://www.mymovies.dk), through your
+  own account. This integration is
+  unofficial and not affiliated with or endorsed by My Movies: get the app and
+  manage your collection on [mymovies.dk](https://www.mymovies.dk).
+- Posters are provided by [TMDB](https://www.themoviedb.org).
+  This product uses the TMDB API but is not endorsed or certified by TMDB.
+
+The My Movies panel shows these credits and a link to the official My Movies
+website.
 
 ## License
 

@@ -24,7 +24,7 @@ from .api import (
     MyMoviesClient,
     MyMoviesError,
 )
-from .catalog import CatalogEntry, CatalogStore
+from .catalog import CatalogEntry, CatalogStore, normalize_title
 from .const import CONF_TMDB_API_KEY, DOMAIN, TMDB_IMAGE_URL, UPDATE_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,7 +36,7 @@ type MyMoviesConfigEntry = ConfigEntry[MyMoviesCoordinator]
 
 DETAIL_FIELDS = (
     "sort_title", "runtime", "rating", "personal_rating", "parental_rating", "release_date",
-    "added", "disc_type", "media_type", "group", "edition", "genres", "director", "actors",
+    "added", "disc_type", "three_d", "media_type", "group", "edition", "genres", "director", "actors",
     "description",
 )
 
@@ -48,6 +48,9 @@ class MyMoviesData:
     titles: dict[str, CollectionTitle]  # by lower-case title ID
     box_sets: dict[str, list[BoxSetChild]]  # films of each box set, by lower-case box set ID
     children_watched: dict[str, bool] = field(default_factory=dict)  # by lower-case film ID
+    # Discs of a box set scanned as their own titles: film ID -> title ID, title ID -> box set ID.
+    child_titles: dict[str, str] = field(default_factory=dict)
+    box_of: dict[str, str] = field(default_factory=dict)
 
 
 class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
@@ -88,10 +91,10 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             raise UpdateFailed(str(err)) from err
         by_id = {t.id.lower(): t for t in titles}
         await self._async_complete_box_sets(by_id, box_sets)
-        await self._async_update_children_watched(box_sets)
-        data = MyMoviesData(
-            titles=by_id, box_sets=box_sets, children_watched=dict(self._children_watched)
-        )
+        data = MyMoviesData(titles=by_id, box_sets=box_sets)
+        self._link_box_set_discs(data)
+        await self._async_update_children_watched(data)
+        data.children_watched = dict(self._children_watched)
         self._update_catalog_issue(data)
         if self._tmdb_missing(data):
             self.config_entry.async_create_background_task(
@@ -120,11 +123,53 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             if self._box_set_cache[key]:
                 box_sets[key] = self._box_set_cache[key]
 
-    async def _async_update_children_watched(
-        self, box_sets: dict[str, list[BoxSetChild]]
-    ) -> None:
-        """Read the watched flag of box-set films: all every few hours, new ones at once."""
-        ids = {c.id.lower(): c.id for children in box_sets.values() for c in children}
+    def _link_box_set_discs(self, data: MyMoviesData) -> None:
+        """Find the titles that are the discs of a box set, scanned on their own.
+
+        Matched on (original) title and year; when several titles match (the same film
+        owned twice), the one numbered closest after the box set is its disc.
+        """
+        used: set[str] = set()
+        for box_key, children in data.box_sets.items():
+            box = data.titles.get(box_key)
+            if box is None:
+                continue
+            for child in children:
+                names = {normalize_title(child.title), normalize_title(child.original_title)} - {""}
+                candidates = []
+                for key, title in data.titles.items():
+                    info = self.entry_for(title)
+                    if key in used or key in data.box_sets or info is None:
+                        continue
+                    if not names & {normalize_title(info.title), normalize_title(info.original_title)}:
+                        continue
+                    if child.year and info.year and child.year != info.year:
+                        continue
+                    candidates.append(title)
+                if not candidates:
+                    continue
+                disc = min(
+                    candidates,
+                    key=lambda t: (
+                        t.collection_number < box.collection_number,
+                        abs(t.collection_number - box.collection_number),
+                    ),
+                )
+                used.add(disc.id.lower())
+                data.child_titles[child.id.lower()] = disc.id.lower()
+                data.box_of[disc.id.lower()] = box_key
+
+    async def _async_update_children_watched(self, data: MyMoviesData) -> None:
+        """Read the watched flag of box-set films without their own title.
+
+        All of them every few hours, new ones at once.
+        """
+        ids = {
+            c.id.lower(): c.id
+            for children in data.box_sets.values()
+            for c in children
+            if c.id.lower() not in data.child_titles
+        }
         now = dt_util.utcnow()
         due = self._children_checked is None or now - self._children_checked >= CHILDREN_WATCHED_INTERVAL
         todo = list(ids) if due else [key for key in ids if key not in self._children_watched]
@@ -268,8 +313,17 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             "disc_type": child.disc_type,
             "poster": poster or None,
             "description": found.get("overview", ""),
-            "watched": self.data.children_watched.get(child.id.lower(), False) if self.data else False,
+            "watched": self._child_watched(child),
+            "title_id": self.data.child_titles.get(child.id.lower()) if self.data else None,
         }
+
+    def _child_watched(self, child: BoxSetChild) -> bool:
+        """A box-set film owned as its own title is watched when that title is."""
+        if not self.data:
+            return False
+        if title_id := self.data.child_titles.get(child.id.lower()):
+            return self.data.titles[title_id].watched
+        return self.data.children_watched.get(child.id.lower(), False)
 
     def describe(self, title: CollectionTitle, *, details: bool = False) -> dict[str, Any]:
         """Everything known about a title (details: also the export columns and box set)."""
@@ -290,8 +344,9 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             for name in DETAIL_FIELDS:
                 data[name] = getattr(entry or default, name)
             data["children"] = [self.describe_child(c) for c in children]
+            data["box_set_id"] = self.data.box_of.get(title.id.lower()) if self.data else None
         elif children:
-            keep = ("id", "title", "original_title", "year", "watched")
+            keep = ("id", "title", "original_title", "year", "watched", "title_id")
             data["children"] = [
                 {k: v for k, v in self.describe_child(c).items() if k in keep} for c in children
             ]
