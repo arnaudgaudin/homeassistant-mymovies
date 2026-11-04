@@ -56,6 +56,18 @@ class BoxSetChild:
     edition: str
     disc_type: str
     thumbnail: str  # My Movies cover URL (200 px wide at best)
+    thumbnail_width: int = 0
+    thumbnail_height: int = 0
+
+
+def _thumbnail_size(el: ET.Element) -> dict[str, int]:
+    """Size of the cover URL kept for a box-set film (big thumbnail when there is one)."""
+    prefix = "BigThumbnail" if el.get("BigThumbnail") else "Thumbnail"
+    width, height = el.get(f"{prefix}Width") or "", el.get(f"{prefix}Height") or ""
+    return {
+        "thumbnail_width": int(width) if width.isdigit() else 0,
+        "thumbnail_height": int(height) if height.isdigit() else 0,
+    }
 
 
 class MyMoviesClient:
@@ -173,6 +185,7 @@ class MyMoviesClient:
                     edition=(el.get("Edition") or "").strip(),
                     disc_type=el.get("Type", ""),
                     thumbnail=el.get("BigThumbnail") or el.get("Thumbnail") or "",
+                    **_thumbnail_size(el),
                 )
             )
         for children in box_sets.values():
@@ -206,6 +219,7 @@ class MyMoviesClient:
                         edition=(el.get("Edition") or "").strip(),
                         disc_type=el.get("Type", ""),
                         thumbnail=el.get("BigThumbnail") or el.get("Thumbnail") or "",
+                        **_thumbnail_size(el),
                     )
                 )
         children.sort(key=lambda c: (c.year or 0, c.title))

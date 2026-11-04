@@ -138,29 +138,34 @@ def read_uploaded_export(hass: HomeAssistant, file_id: str) -> dict[int, Catalog
 
 
 class CatalogStore:
-    """Persist the imported catalog and the TMDB lookups of one account."""
+    """Persist the imported catalog, the TMDB lookups and the covers chosen by the user.
+
+    covers: lower-case title or film ID -> TMDB match and best poster
+        ({"kind", "id", "overview", "path", "width", "height", "lang"}; {} when TMDB
+        does not know it).
+    overrides: lower-case title or film ID -> cover chosen by the user
+        ({"source": "tmdb", "path", ...}, {"source": "mymovies"} or
+        {"source": "upload", "file", ...}).
+    """
 
     def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
         self._store: Store[dict] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}")
         self.catalog: dict[int, CatalogEntry] = {}
-        self.posters: dict[str, str] = {}  # IMDb ID -> TMDB poster path ("" = none)
-        self.children: dict[str, dict[str, str]] = {}  # box-set film ID -> poster, overview
-        self.box_posters: dict[str, str] = {}  # lower-case title ID without IMDb -> poster path
+        self.covers: dict[str, dict] = {}
+        self.overrides: dict[str, dict] = {}
 
     async def async_load(self) -> None:
         data = await self._store.async_load() or {}
         self.catalog = {int(k): CatalogEntry(**v) for k, v in data.get("catalog", {}).items()}
-        self.posters = data.get("posters", {})
-        self.children = data.get("children", {})
-        self.box_posters = data.get("box_posters", {})
+        self.covers = data.get("covers", {})
+        self.overrides = data.get("overrides", {})
 
     async def async_save(self) -> None:
         await self._store.async_save(
             {
                 "catalog": {str(k): asdict(v) for k, v in self.catalog.items()},
-                "posters": self.posters,
-                "children": self.children,
-                "box_posters": self.box_posters,
+                "covers": self.covers,
+                "overrides": self.overrides,
             }
         )
 

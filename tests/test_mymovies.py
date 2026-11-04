@@ -23,6 +23,15 @@ CLIENT = "custom_components.mymovies.api.MyMoviesClient"
 
 
 @pytest.fixture(autouse=True)
+def no_tmdb_network():
+    """TMDB is never reached for real: tests patch the lookups they need."""
+    from custom_components.mymovies import tmdb
+
+    with patch.object(tmdb, "_get", AsyncMock(side_effect=tmdb.TmdbError("no network in tests"))):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def films_not_watched():
     """Box-set films start unwatched (their flag is read one by one)."""
     with patch(f"{CLIENT}.async_get_watched", return_value=False) as mock:
@@ -103,17 +112,19 @@ async def test_config_flow(hass: HomeAssistant) -> None:
     assert result["data"][CONF_USERNAME] == "me@example.com"
 
 
-async def _setup(hass: HomeAssistant) -> MockConfigEntry:
+async def _setup(hass: HomeAssistant, options: dict | None = None) -> MockConfigEntry:
     entry = MockConfigEntry(
         domain=DOMAIN,
         unique_id="me@example.com",
         title="me@example.com",
         data={CONF_USERNAME: "me@example.com", CONF_PASSWORD: "secret"},
+        options=options or {},
     )
     entry.add_to_hass(hass)
     with (
         patch(f"{CLIENT}.async_get_titles", return_value=TITLES),
         patch(f"{CLIENT}.async_get_box_set_children", return_value=BOX_SETS),
+        patch(f"{CLIENT}.async_get_titles_in_box_set", return_value=[]),
     ):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
@@ -166,8 +177,10 @@ async def test_panel_and_websocket(hass: HomeAssistant, hass_ws_client) -> None:
     assert "mymovies" in hass.data["frontend_panels"]
     store = entry.runtime_data.store
     store.catalog = CATALOG
-    store.posters = {"tt0401792": "/sincity.jpg"}
-    store.children = {"child-2": {"poster": "/reloaded.jpg", "overview": "Neo revient."}}
+    store.covers = {
+        TITLES[0].id.lower(): {"kind": "movie", "id": 1, "path": "/sincity.jpg", "width": 2000, "height": 3000},
+        "child-2": {"kind": "movie", "id": 2, "path": "/reloaded.jpg", "width": 1000, "height": 1500, "overview": "Neo revient."},
+    }
 
     client = await hass_ws_client(hass)
     await client.send_json_auto_id({"type": "mymovies/collection"})
@@ -175,6 +188,7 @@ async def test_panel_and_websocket(hass: HomeAssistant, hass_ws_client) -> None:
     assert msg["success"]
     titles = {t["collection_number"]: t for t in msg["result"]["titles"]}
     assert titles[1]["poster"] == "https://image.tmdb.org/t/p/w342/sincity.jpg"
+    assert titles[1]["cover"] == {"source": "tmdb", "width": 2000, "height": 3000, "chosen": False}
     # No TMDB poster: signed My Movies thumbnail.
     assert titles[2]["poster"].startswith("/api/mymovies/thumbnail/") and "authSig=" in titles[2]["poster"]
     # Box set without collection poster: its first film with a TMDB poster.
@@ -294,3 +308,118 @@ async def test_box_set_discs_owned_as_titles(hass: HomeAssistant, hass_ws_client
     assert result[5]["box_set_id"] == box
     reloaded = next(c for c in result[4]["children"] if c["id"] == "child-2")
     assert reloaded["title_id"] == disc and reloaded["watched"] is True
+
+
+
+def test_tmdb_rules() -> None:
+    """Poster ranking, season numbers and box-set collection names."""
+    from custom_components.mymovies import tmdb
+
+    posters = [
+        {"path": "/en.jpg", "width": 2000, "height": 3000, "lang": "en", "votes": 9},
+        {"path": "/fr_small.jpg", "width": 600, "height": 900, "lang": "fr", "votes": 9},
+        {"path": "/fr.jpg", "width": 1800, "height": 2700, "lang": "fr", "votes": 3},
+    ]
+    assert tmdb.best_poster(posters, "fr")["path"] == "/fr.jpg"  # sharp and French
+    assert tmdb.season_number("Dark Angel: The Complete Second Season") == 2
+    assert tmdb.season_number("Stargate SG-1 : Saison 3") == 3
+    assert tmdb.season_number("Apollo 11") is None
+    wanted = tmdb._bare(tmdb.franchise_name("Jurassic World : Trilogie"))
+    assert tmdb._bare("Collection Jurassic World").startswith(wanted)
+    assert not tmdb._bare("LEGO Jurassic World Collection").startswith(wanted)
+
+
+def test_image_size() -> None:
+    """Uploaded covers: PNG and JPEG sizes are read, anything else is refused."""
+    import struct
+
+    from custom_components.mymovies.covers import InvalidImageError, image_size
+
+    png = b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + b"IHDR" + struct.pack(">II", 1000, 1500)
+    assert image_size(png) == ("png", 1000, 1500)
+    jpeg = b"\xff\xd8" + b"\xff\xe0" + struct.pack(">H", 4) + b"JF" + b"\xff\xc0" + struct.pack(">HBHH", 17, 8, 1500, 1000)
+    assert image_size(jpeg) == ("jpg", 1000, 1500)
+    with pytest.raises(InvalidImageError):
+        image_size(b"GIF89a....")
+
+
+async def test_tmdb_lookup(hass: HomeAssistant) -> None:
+    """Each season disc gets its season's poster; titles without IMDb ID are searched."""
+    from custom_components.mymovies import tmdb
+
+    titles = [_title(1), _title(2), _title(3)]
+    catalog = {
+        1: CatalogEntry("Dark Angel: The Complete First Season", "Dark Angel: The Complete First Season", "DA1", "tt0204993", 2000),
+        2: CatalogEntry("Dark Angel: The Complete Second Season", "Dark Angel: The Complete Second Season", "DA2", "tt0204993", 2001),
+        3: CatalogEntry("Renaissance", "Renaissance", "Renaissance", None, 2006),
+    }
+    entry = await _setup(hass, {"tmdb_api_key": "k"})
+    coordinator = entry.runtime_data
+    coordinator.store.catalog = catalog
+    seasons = []
+
+    async def posters(session, key, match, lang):
+        seasons.append((match.kind, match.season))
+        return [{"path": f"/{match.kind}{match.season or ''}.jpg", "width": 2000, "height": 3000, "lang": "fr", "votes": 5}]
+
+    with (
+        patch.object(tmdb, "async_find_imdb", AsyncMock(side_effect=lambda *a: tmdb.TmdbMatch("tv", 2407))),
+        patch.object(tmdb, "async_search_movie", AsyncMock(return_value=tmdb.TmdbMatch("movie", 9389))) as search,
+        patch.object(tmdb, "async_posters", side_effect=posters),
+        patch(f"{CLIENT}.async_get_titles", return_value=titles),
+        patch(f"{CLIENT}.async_get_box_set_children", return_value={}),
+        patch(f"{CLIENT}.async_get_titles_in_box_set", return_value=[]),
+    ):
+        await coordinator.async_refresh()  # schedules the TMDB lookups
+        await hass.async_block_till_done()
+    covers = coordinator.store.covers
+    assert covers[titles[0].id.lower()]["path"] == "/tv1.jpg"
+    assert covers[titles[1].id.lower()]["path"] == "/tv2.jpg"
+    assert covers[titles[2].id.lower()]["path"] == "/movie.jpg"
+    assert search.await_args.args[2] == "Renaissance"
+
+
+async def test_cover_choice(hass: HomeAssistant, hass_ws_client) -> None:
+    """Largest cover by default; the user can pick a TMDB poster, upload one, or go back."""
+    import struct
+
+    from custom_components.mymovies import tmdb
+
+    entry = await _setup(hass, {"tmdb_api_key": "k"})
+    coordinator = entry.runtime_data
+    key = TITLES[0].id.lower()
+    # Small TMDB poster: still larger than the My Movies thumbnail.
+    coordinator.store.covers = {key: {"kind": "movie", "id": 1, "path": "/small.jpg", "width": 300, "height": 450}}
+    assert coordinator.cover(key)["source"] == "tmdb"
+    coordinator.store.covers = {key: {"kind": "movie", "id": 1}}
+    assert coordinator.cover(key)["source"] == "mymovies"
+
+    client = await hass_ws_client(hass)
+    choices = [{"path": "/a.jpg", "width": 2000, "height": 3000, "lang": "fr", "votes": 1}]
+    with patch.object(tmdb, "async_posters", AsyncMock(return_value=choices)):
+        await client.send_json_auto_id({"type": "mymovies/cover_choices", "title_id": TITLES[0].id})
+        msg = await client.receive_json()
+    assert msg["success"]
+    assert [c["source"] for c in msg["result"]["choices"]] == ["tmdb", "mymovies"]
+
+    await client.send_json_auto_id(
+        {"type": "mymovies/set_cover", "title_id": TITLES[0].id, "source": "tmdb", "path": "/a.jpg", "width": 2000, "height": 3000}
+    )
+    assert (await client.receive_json())["success"]
+    assert entry.runtime_data.cover(key) | {} == {
+        "source": "tmdb", "url": "https://image.tmdb.org/t/p/w342/a.jpg", "width": 2000, "height": 3000, "chosen": True,
+    }
+
+    png = b"\x89PNG\r\n\x1a\n" + struct.pack(">I", 13) + b"IHDR" + struct.pack(">II", 800, 1200)
+    with patch("custom_components.mymovies.websocket.read_upload", return_value=png):
+        await client.send_json_auto_id({"type": "mymovies/set_cover", "title_id": TITLES[0].id, "source": "upload", "file_id": "f"})
+        assert (await client.receive_json())["success"]
+    cover = entry.runtime_data.cover(key)
+    assert cover["source"] == "upload" and cover["width"] == 800
+    path = Path(hass.config.path("mymovies", "covers", f"{entry.entry_id}_{key}.png"))
+    assert path.is_file()
+
+    await client.send_json_auto_id({"type": "mymovies/set_cover", "title_id": TITLES[0].id, "source": "auto"})
+    assert (await client.receive_json())["success"]
+    assert not path.exists()  # the uploaded file is removed with the choice
+    assert entry.runtime_data.cover(key)["source"] == "mymovies"

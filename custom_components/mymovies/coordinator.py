@@ -25,7 +25,15 @@ from .api import (
     MyMoviesError,
 )
 from .catalog import CatalogEntry, CatalogStore, normalize_title
-from .const import CONF_TMDB_API_KEY, DOMAIN, TMDB_IMAGE_URL, UPDATE_INTERVAL
+from .const import (
+    CONF_TMDB_API_KEY,
+    COVER_PATH,
+    DOMAIN,
+    MYMOVIES_THUMBNAIL,
+    THUMBNAIL_PATH,
+    TMDB_IMAGE_URL,
+    UPDATE_INTERVAL,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -217,64 +225,87 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             translation_placeholders={"account": self.config_entry.title, "count": str(missing)},
         )
 
-    def _missing_imdb(self) -> list[str]:
-        return sorted(
-            {e.imdb for e in self.store.catalog.values() if e.imdb and e.imdb not in self.store.posters}
-        )
+    # ---- TMDB lookups and covers -------------------------------------------
 
-    def _missing_children(self, data: MyMoviesData) -> list[BoxSetChild]:
-        return [
-            child
+    def language(self) -> str:
+        return (self.hass.config.language or "en")[:2]
+
+    def _tmdb_todo(self, data: MyMoviesData) -> list[tuple[str, CollectionTitle | BoxSetChild]]:
+        """Titles and box-set films without their own title, not looked up on TMDB yet."""
+        todo: list[tuple[str, CollectionTitle | BoxSetChild]] = [
+            (key, title)
+            for key, title in data.titles.items()
+            if key not in self.store.covers and self.entry_for(title)
+        ]
+        todo += [
+            (child.id.lower(), child)
             for children in data.box_sets.values()
             for child in children
-            if child.id not in self.store.children
+            if child.id.lower() not in data.child_titles and child.id.lower() not in self.store.covers
         ]
-
-    def _missing_box_posters(self, data: MyMoviesData) -> list[CollectionTitle]:
-        """Titles without IMDb ID (box sets) whose TMDB collection was not looked up."""
-        return [
-            t
-            for key, t in data.titles.items()
-            if (entry := self.entry_for(t)) and not entry.imdb and key not in self.store.box_posters
-        ]
+        return todo
 
     def _tmdb_missing(self, data: MyMoviesData) -> bool:
-        return bool(self.config_entry.options.get(CONF_TMDB_API_KEY)) and bool(
-            self._missing_imdb() or self._missing_children(data) or self._missing_box_posters(data)
-        )
+        return bool(self.config_entry.options.get(CONF_TMDB_API_KEY)) and bool(self._tmdb_todo(data))
+
+    async def _async_match(
+        self,
+        session: Any,
+        api_key: str,
+        key: str,
+        item: CollectionTitle | BoxSetChild,
+        data: MyMoviesData,
+    ) -> tmdb.TmdbMatch | None:
+        """Find a title on TMDB: by IMDb ID, as a collection (box set) or by title and year."""
+        lang = self.language()
+        if isinstance(item, BoxSetChild):
+            return await tmdb.async_search_movie(
+                session, api_key, item.original_title or item.title, item.year, lang
+            )
+        entry = self.entry_for(item)
+        if key in data.box_sets:
+            return await tmdb.async_search_collection(session, api_key, entry.title, lang)
+        if entry.imdb:
+            match = await tmdb.async_find_imdb(session, api_key, entry.imdb, lang)
+            if match and match.kind == "tv":
+                # One IMDb ID for the whole series: each season disc gets its season's poster.
+                match.season = tmdb.season_number(entry.title) or tmdb.season_number(entry.original_title)
+            return match
+        match = await tmdb.async_search_movie(session, api_key, entry.original_title, entry.year, lang)
+        if match is None and entry.title != entry.original_title:
+            match = await tmdb.async_search_movie(session, api_key, entry.title, entry.year, lang)
+        return match
 
     async def async_fetch_tmdb(self, data: MyMoviesData) -> None:
-        """Look up the TMDB posters and box-set films not cached yet."""
+        """Find every title on TMDB once and keep its best poster with its size."""
         api_key = self.config_entry.options.get(CONF_TMDB_API_KEY)
         if not api_key or self._fetching:
             return
         self._fetching = True
         session = async_get_clientsession(self.hass)
-        changed = False
+        lang = self.language()
+        done = 0
         try:
-            for imdb in self._missing_imdb():
-                self.store.posters[imdb] = await tmdb.async_find_poster(session, api_key, imdb)
-                changed = True
-            for child in self._missing_children(data):
-                self.store.children[child.id] = await tmdb.async_search_movie(
-                    session,
-                    api_key,
-                    child.original_title or child.title,
-                    child.year,
-                    self.hass.config.language,
-                )
-                changed = True
-            for title in self._missing_box_posters(data):
-                entry = self.entry_for(title)
-                self.store.box_posters[title.id.lower()] = await tmdb.async_search_collection(
-                    session, api_key, entry.title if entry else "", self.hass.config.language
-                )
-                changed = True
+            for key, item in self._tmdb_todo(data):
+                match = await self._async_match(session, api_key, key, item, data)
+                found: dict[str, Any] = {}
+                if match:
+                    found = {"kind": match.kind, "id": match.id, "season": match.season, "overview": match.overview}
+                    posters = await tmdb.async_posters(session, api_key, match, lang)
+                    if best := tmdb.best_poster(posters, lang):
+                        found.update(
+                            path=best["path"], width=best["width"], height=best["height"], lang=best["lang"]
+                        )
+                self.store.covers[key] = found
+                done += 1
+                if done % 25 == 0:
+                    await self.store.async_save()
+                    self.async_update_listeners()
         except tmdb.TmdbError as err:
             _LOGGER.warning("TMDB lookups stopped: %s", err)
         finally:
             self._fetching = False
-            if changed:
+            if done:
                 await self.store.async_save()
                 self.async_update_listeners()
 
@@ -282,40 +313,109 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
         """Catalog data of a title, when the export knows it."""
         return self.store.catalog.get(title.collection_number)
 
-    def poster_url(self, title: CollectionTitle) -> str | None:
-        """Best TMDB poster of a title: its own, its box set's collection, or its first film's."""
-        entry = self.entry_for(title)
-        if entry and entry.imdb:
-            path = self.store.posters.get(entry.imdb)
-        else:
-            path = self.store.box_posters.get(title.id.lower())
-            if not path and self.data:
-                path = next(
-                    (
-                        found["poster"]
-                        for child in self.data.box_sets.get(title.id.lower(), [])
-                        if (found := self.store.children.get(child.id, {})).get("poster")
-                    ),
-                    None,
-                )
-        return f"{TMDB_IMAGE_URL}{path}" if path else None
+    def find_child(self, key: str) -> BoxSetChild | None:
+        """A box-set film by its lower-case ID."""
+        if self.data:
+            for children in self.data.box_sets.values():
+                for child in children:
+                    if child.id.lower() == key:
+                        return child
+        return None
+
+    def _tmdb_cover(self, key: str) -> dict[str, Any] | None:
+        found = self.store.covers.get(key) or {}
+        if not found.get("path"):
+            return None
+        return {
+            "source": "tmdb",
+            "url": f"{TMDB_IMAGE_URL}{found['path']}",
+            "width": found.get("width", 0),
+            "height": found.get("height", 0),
+        }
+
+    def mymovies_cover(self, key: str) -> dict[str, Any] | None:
+        """The My Movies cover of a title (API thumbnail) or box-set film (catalog cover)."""
+        if self.data and key in self.data.titles:
+            return {
+                "source": "mymovies",
+                "sign": THUMBNAIL_PATH.format(
+                    entry_id=self.config_entry.entry_id, title_id=self.data.titles[key].id
+                ),
+                "width": MYMOVIES_THUMBNAIL[0],
+                "height": MYMOVIES_THUMBNAIL[1],
+            }
+        child = self.find_child(key)
+        if child and child.thumbnail:
+            return {
+                "source": "mymovies",
+                "url": child.thumbnail,
+                "width": child.thumbnail_width or 200,
+                "height": child.thumbnail_height or 0,
+            }
+        return None
+
+    def cover(self, key: str) -> dict[str, Any] | None:
+        """Cover of a title or box-set film: the user's choice, else the largest one.
+
+        Returns {"source", "width", "height"} with "url" (public image) or "sign"
+        (Home Assistant path to sign for the viewer).
+        """
+        if override := self.store.overrides.get(key):
+            if override["source"] == "tmdb":
+                return {
+                    "source": "tmdb",
+                    "url": f"{TMDB_IMAGE_URL}{override['path']}",
+                    "width": override.get("width", 0),
+                    "height": override.get("height", 0),
+                    "chosen": True,
+                }
+            if override["source"] == "upload":
+                return {
+                    "source": "upload",
+                    "sign": COVER_PATH.format(entry_id=self.config_entry.entry_id, key=key),
+                    "width": override.get("width", 0),
+                    "height": override.get("height", 0),
+                    "chosen": True,
+                }
+            if mymovies := self.mymovies_cover(key):
+                return {**mymovies, "chosen": True}
+        candidates = [c for c in (self._tmdb_cover(key), self.mymovies_cover(key)) if c]
+        if self.data and key in self.data.box_sets and not any(c["source"] == "tmdb" for c in candidates):
+            # Box set unknown to TMDB: the poster of one of its films.
+            for child in self.data.box_sets[key]:
+                child_key = self.data.child_titles.get(child.id.lower(), child.id.lower())
+                if poster := self._tmdb_cover(child_key):
+                    candidates.append(poster)
+                    break
+        return max(candidates, key=lambda c: c["width"] * c["height"], default=None)
+
+    @staticmethod
+    def _apply_cover(data: dict[str, Any], cover: dict[str, Any] | None) -> None:
+        """Poster URL (when public), cover description and the path to sign, if any."""
+        data["poster"] = cover.get("url") if cover else None
+        data["cover"] = (
+            {k: cover[k] for k in ("source", "width", "height")} | {"chosen": cover.get("chosen", False)}
+            if cover
+            else None
+        )
+        data["_sign"] = cover.get("sign") if cover else None
 
     def describe_child(self, child: BoxSetChild) -> dict[str, Any]:
         """One film of a box set, for the panel."""
-        found = self.store.children.get(child.id, {})
-        poster = f"{TMDB_IMAGE_URL}{found['poster']}" if found.get("poster") else child.thumbnail
-        return {
+        key = child.id.lower()
+        data = {
             "id": child.id,
             "title": child.title,
             "original_title": child.original_title,
             "year": child.year,
             "edition": child.edition,
             "disc_type": child.disc_type,
-            "poster": poster or None,
-            "description": found.get("overview", ""),
+            "description": (self.store.covers.get(key) or {}).get("overview", ""),
             "watched": self._child_watched(child),
-            "title_id": self.data.child_titles.get(child.id.lower()) if self.data else None,
+            "title_id": self.data.child_titles.get(key) if self.data else None,
         }
+        self._apply_cover(data, self.cover(key))
+        return data
 
     def _child_watched(self, child: BoxSetChild) -> bool:
         """A box-set film owned as its own title is watched when that title is."""
@@ -328,6 +428,7 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
     def describe(self, title: CollectionTitle, *, details: bool = False) -> dict[str, Any]:
         """Everything known about a title (details: also the export columns and box set)."""
         entry = self.entry_for(title)
+        key = title.id.lower()
         data: dict[str, Any] = {
             "id": title.id,
             "collection_number": title.collection_number,
@@ -336,20 +437,25 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             "imdb": entry.imdb if entry else None,
             "year": entry.year if entry else None,
             "watched": title.watched,
-            "poster": self.poster_url(title),
         }
-        children = self.data.box_sets.get(title.id.lower(), []) if self.data else []
+        self._apply_cover(data, self.cover(key))
+        children = self.data.box_sets.get(key, []) if self.data else []
         if details:
             default = CatalogEntry("", "", "", None, None)
             for name in DETAIL_FIELDS:
                 data[name] = getattr(entry or default, name)
+            if not data["description"]:
+                data["description"] = (self.store.covers.get(key) or {}).get("overview", "")
             data["children"] = [self.describe_child(c) for c in children]
-            data["box_set_id"] = self.data.box_of.get(title.id.lower()) if self.data else None
-        elif children:
-            keep = ("id", "title", "original_title", "year", "watched", "title_id")
-            data["children"] = [
-                {k: v for k, v in self.describe_child(c).items() if k in keep} for c in children
-            ]
+            data["box_set_id"] = self.data.box_of.get(key) if self.data else None
+        else:
+            data.pop("_sign")
+            data.pop("cover")
+            if children:
+                keep = ("id", "title", "original_title", "year", "watched", "title_id")
+                data["children"] = [
+                    {k: v for k, v in self.describe_child(c).items() if k in keep} for c in children
+                ]
         return data
 
     async def async_get_thumbnail(self, title_id: str) -> bytes | None:

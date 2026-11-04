@@ -1,13 +1,18 @@
-"""Optional TMDB lookup of posters by IMDb ID (needs a free TMDB API key)."""
+"""Optional TMDB lookups (free TMDB API key): find each title, list its posters with sizes."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import re
+from typing import Any
 
 import aiohttp
 
+from .catalog import normalize_title
+
 TMDB_API = "https://api.themoviedb.org/3"
 TIMEOUT = aiohttp.ClientTimeout(total=20)
+GOOD_WIDTH = 1000  # posters at least this wide are all sharp enough
 
 
 class TmdbError(Exception):
@@ -16,6 +21,16 @@ class TmdbError(Exception):
 
 class TmdbAuthError(TmdbError):
     """TMDB rejected the API key."""
+
+
+@dataclass(slots=True)
+class TmdbMatch:
+    """A TMDB movie, series or collection."""
+
+    kind: str  # "movie", "tv" or "collection"
+    id: int
+    overview: str = ""
+    season: int | None = None  # a season of a series has its own posters
 
 
 async def _get(session: aiohttp.ClientSession, path: str, params: dict[str, str]) -> dict:
@@ -35,29 +50,32 @@ async def async_validate_key(session: aiohttp.ClientSession, api_key: str) -> No
     await _get(session, "/configuration", {"api_key": api_key})
 
 
-async def async_find_poster(session: aiohttp.ClientSession, api_key: str, imdb: str) -> str:
-    """Poster path of the movie or series with this IMDb ID ("" when none)."""
+async def async_find_imdb(
+    session: aiohttp.ClientSession, api_key: str, imdb: str, language: str
+) -> TmdbMatch | None:
+    """The movie or series with this IMDb ID."""
     data = await _get(
-        session, f"/find/{imdb}", {"api_key": api_key, "external_source": "imdb_id"}
+        session,
+        f"/find/{imdb}",
+        {"api_key": api_key, "external_source": "imdb_id", "language": language},
     )
-    for kind in ("movie_results", "tv_results"):
-        for result in data.get(kind) or []:
-            if result.get("poster_path"):
-                return result["poster_path"]
-    return ""
+    for kind, results in (("movie", "movie_results"), ("tv", "tv_results")):
+        for result in data.get(results) or []:
+            return TmdbMatch(kind, result["id"], result.get("overview") or "")
+    return None
 
 
 async def async_search_movie(
     session: aiohttp.ClientSession, api_key: str, title: str, year: int | None, language: str
-) -> dict[str, str]:
-    """Poster path and synopsis of the best match for a title ("" when none)."""
+) -> TmdbMatch | None:
+    """Best movie match for a title (and year)."""
     params = {"api_key": api_key, "query": title, "language": language}
     if year:
         params["year"] = str(year)
     data = await _get(session, "/search/movie", params)
     for result in data.get("results") or []:
-        return {"poster": result.get("poster_path") or "", "overview": result.get("overview") or ""}
-    return {"poster": "", "overview": ""}
+        return TmdbMatch("movie", result["id"], result.get("overview") or "")
+    return None
 
 
 # Words of box-set titles that are not part of the franchise name.
@@ -66,6 +84,7 @@ _BOX_SET_NOISE = re.compile(
     r"l[’']?[ée]dition.*|[ée]dition.*|anniversa\w*.*|box\s*set)",
     re.IGNORECASE,
 )
+_ARTICLE = re.compile(r"^(the|le|la|les|l')\s*", re.IGNORECASE)
 
 
 def franchise_name(title: str) -> str:
@@ -74,17 +93,94 @@ def franchise_name(title: str) -> str:
     return re.sub(r"\s+", " ", name).strip(" :-–—")
 
 
+def _bare(name: str | None) -> str:
+    """Franchise name, normalized, without "Collection", "Saga"... nor a leading article.
+
+    "Collection Jurassic World" and "The Matrix Collection" give "jurassic world" and "matrix".
+    """
+    return _ARTICLE.sub("", normalize_title(franchise_name(name or "")))
+
+
 async def async_search_collection(
     session: aiohttp.ClientSession, api_key: str, title: str, language: str
-) -> str:
-    """Poster path of the TMDB collection matching a box-set title ("" when none)."""
+) -> TmdbMatch | None:
+    """The TMDB collection named after a box set's franchise.
+
+    Only a collection whose name starts with the franchise matches: "Jurassic World"
+    must not pick "LEGO Jurassic World".
+    """
     query = franchise_name(title)
     if not query:
-        return ""
+        return None
     data = await _get(
         session, "/search/collection", {"api_key": api_key, "query": query, "language": language}
     )
-    for result in data.get("results") or []:
-        if result.get("poster_path"):
-            return result["poster_path"]
-    return ""
+    wanted = _bare(query)
+    matches = [
+        r
+        for r in data.get("results") or []
+        if any(_bare(r.get(k)).startswith(wanted) for k in ("name", "original_name"))
+    ]
+    if not matches:
+        return None
+    best = min(matches, key=lambda r: len(r.get("name") or ""))
+    return TmdbMatch("collection", best["id"], best.get("overview") or "")
+
+
+async def async_posters(
+    session: aiohttp.ClientSession, api_key: str, match: TmdbMatch, language: str
+) -> list[dict[str, Any]]:
+    """All posters of a movie, series or collection, with their size and language."""
+    path = f"/{match.kind}/{match.id}"
+    if match.kind == "tv" and match.season:
+        path += f"/season/{match.season}"
+    data = await _get(
+        session, f"{path}/images", {"api_key": api_key, "include_image_language": f"{language},null,en"}
+    )
+    return [
+        {
+            "path": p["file_path"],
+            "width": p.get("width") or 0,
+            "height": p.get("height") or 0,
+            "lang": p.get("iso_639_1"),
+            "votes": p.get("vote_average") or 0,
+        }
+        for p in data.get("posters") or []
+        if p.get("file_path")
+    ]
+
+
+_ORDINALS = {
+    "first": 1, "second": 2, "third": 3, "fourth": 4, "fifth": 5, "sixth": 6, "seventh": 7,
+    "eighth": 8, "ninth": 9, "tenth": 10, "premiere": 1, "deuxieme": 2, "seconde": 2,
+    "troisieme": 3, "quatrieme": 4, "cinquieme": 5, "sixieme": 6, "septieme": 7,
+    "huitieme": 8, "neuvieme": 9, "dixieme": 10,
+}
+_SEASON_NUMBER = re.compile(r"\b(?:season|saison|staffel|temporada|stagione)\s*(\d{1,2})\b|\bs(\d{1,2})\b")
+_SEASON_WORD = re.compile(r"\b(\w+)\s+(?:season|saison)\b")
+
+
+def season_number(title: str) -> int | None:
+    """'Dark Angel: The Complete Second Season' -> 2; None when no season is named."""
+    text = normalize_title(title)
+    if match := _SEASON_NUMBER.search(text):
+        return int(match.group(1) or match.group(2))
+    for match in _SEASON_WORD.finditer(text):
+        if match.group(1) in _ORDINALS:
+            return _ORDINALS[match.group(1)]
+    return None
+
+
+def rank_posters(posters: list[dict[str, Any]], language: str) -> list[dict[str, Any]]:
+    """Sharp posters (≥ 1000 px wide) first; then the user's language, textless, English."""
+    rank = {language: 0, None: 1, "en": 2}
+    return sorted(
+        posters,
+        key=lambda p: (p["width"] < GOOD_WIDTH, rank.get(p["lang"], 3), -p["votes"], -p["width"]),
+    )
+
+
+def best_poster(posters: list[dict[str, Any]], language: str) -> dict[str, Any] | None:
+    """The poster shown when the user did not choose one."""
+    ranked = rank_posters(posters, language)
+    return ranked[0] if ranked else None

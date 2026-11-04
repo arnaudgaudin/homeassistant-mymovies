@@ -20,7 +20,8 @@ from .catalog import CatalogStore
 from .const import DOMAIN, PANEL_URL, STATIC_URL
 from .coordinator import MyMoviesConfigEntry, MyMoviesCoordinator
 from .services import async_setup_services
-from .views import MyMoviesThumbnailView
+from .covers import remove_entry_uploads
+from .views import MyMoviesCoverView, MyMoviesThumbnailView
 from .websocket import async_setup_websocket
 
 PLATFORMS = [Platform.SENSOR]
@@ -32,6 +33,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     async_setup_services(hass)
     async_setup_websocket(hass)
     hass.http.register_view(MyMoviesThumbnailView(hass))
+    hass.http.register_view(MyMoviesCoverView(hass))
     await hass.http.async_register_static_paths(
         [StaticPathConfig(STATIC_URL, str(Path(__file__).parent / "frontend"), False)]
     )
@@ -89,5 +91,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: MyMoviesConfigEntry) ->
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: MyMoviesConfigEntry) -> None:
-    """Delete the stored catalog of a removed account."""
+    """Delete the stored catalog and the uploaded covers of a removed account."""
     await CatalogStore(hass, entry.entry_id).async_remove()
+    await hass.async_add_executor_job(remove_entry_uploads, hass, entry.entry_id)

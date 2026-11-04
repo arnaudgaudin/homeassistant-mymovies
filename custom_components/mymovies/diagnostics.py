@@ -27,9 +27,10 @@ async def async_get_config_entry_diagnostics(
         "watched": sum(t.watched for t in titles),
         "catalog_entries": len(coordinator.store.catalog),
         "titles_without_catalog": sum(coordinator.entry_for(t) is None for t in titles),
-        "posters_cached": sum(bool(p) for p in coordinator.store.posters.values()),
+        "tmdb_found": sum(bool(c) for c in coordinator.store.covers.values()),
+        "tmdb_posters": sum(bool(c.get("path")) for c in coordinator.store.covers.values()),
+        "covers_chosen": len(coordinator.store.overrides),
         "box_sets": len(coordinator.data.box_sets),
         "box_set_films": sum(len(c) for c in coordinator.data.box_sets.values()),
-        "box_set_posters": sum(bool(p) for p in coordinator.store.box_posters.values()),
         "sample": [asdict(t) for t in titles[:3]],
     }
