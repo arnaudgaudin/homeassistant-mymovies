@@ -7,6 +7,8 @@ or written.
 
 from __future__ import annotations
 
+import base64
+import binascii
 from dataclasses import dataclass
 from datetime import datetime
 import xml.etree.ElementTree as ET
@@ -50,8 +52,8 @@ class MyMoviesClient:
         self._username = username
         self._password = password
 
-    async def _call(self, operation: str, params: dict[str, object]) -> ET.Element:
-        """Call one SOAP operation and return its <Response> element (status ok)."""
+    async def _post(self, operation: str, params: dict[str, object]) -> ET.Element:
+        """Call one SOAP operation and return the parsed envelope."""
         inner = "".join(f"<{k}>{escape(str(v))}</{k}>" for k, v in params.items())
         body = (
             '<?xml version="1.0" encoding="utf-8"?>'
@@ -72,17 +74,29 @@ class MyMoviesClient:
             raise MyMoviesError(f"{operation}: {err}") from err
 
         try:
-            root = ET.fromstring(text)
+            return ET.fromstring(text)
         except ET.ParseError as err:
-            raise MyMoviesError(f"{operation}: invalid XML answer") from err
+            raise MyMoviesError(f"{operation}: invalid XML answer ({text[:200]})") from err
+
+    async def _call(
+        self, operation: str, params: dict[str, object], *, refusal_means_auth: bool = False
+    ) -> ET.Element:
+        """Call one SOAP operation and return its <Response> element (status ok).
+
+        refusal_means_auth: the operation is never locked for a valid account, so any
+        refusal means bad credentials (an unknown username answers passwordchanged="false").
+        """
+        root = await self._post(operation, params)
         # The result wraps real nested XML; <Response> carries xmlns="" (no namespace).
         response = next((el for el in root.iter() if el.tag == "Response"), None)
         if response is None:
-            raise MyMoviesError(f"{operation}: no Response element (HTTP answer: {text[:200]})")
+            raise MyMoviesError(f"{operation}: no Response element")
         if response.get("status") != "ok":
-            # ponytail: any non-ok status is treated as a credentials problem; refine
-            # once the API's error codes for other failures are known.
-            raise MyMoviesAuthError(f"{operation}: status {response.get('status')}")
+            # Wrong credentials answer passwordchanged="true"; operations reserved to
+            # the official apps answer validationfailed="true" with passwordchanged="false".
+            if refusal_means_auth or response.get("passwordchanged") == "true":
+                raise MyMoviesAuthError(f"{operation}: credentials rejected")
+            raise MyMoviesError(f"{operation}: refused ({dict(response.attrib)})")
         return response
 
     def _auth(self) -> dict[str, object]:
@@ -99,6 +113,7 @@ class MyMoviesClient:
                 "Version": CLIENT_VERSION,
                 "Locale": 0,
             },
+            refusal_means_auth=True,
         )
         titles = []
         for el in response.iter("Title"):
@@ -134,3 +149,14 @@ class MyMoviesClient:
     async def async_clear_watched(self, title_id: str) -> None:
         """Remove every logged viewing of a title (clears its watched flag)."""
         await self._call("ClearTitleWatched", {**self._auth(), "TitleId": title_id, "Locale": 0})
+
+    async def async_get_thumbnail(self, title_id: str) -> bytes | None:
+        """Return the cover thumbnail (JPEG) of a title, or None when it has none."""
+        root = await self._post("GetTitleThumbnail", {"Id": title_id, "Locale": 0})
+        result = next((el for el in root.iter() if el.tag.endswith("GetTitleThumbnailResult")), None)
+        if result is None or not (result.text or "").strip():
+            return None
+        try:
+            return base64.b64decode(result.text)
+        except binascii.Error as err:
+            raise MyMoviesError(f"GetTitleThumbnail: invalid image data for {title_id}") from err
