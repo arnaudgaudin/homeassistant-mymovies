@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 import logging
 from typing import Any
 
@@ -13,6 +14,7 @@ from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 
 from . import tmdb
 from .api import (
@@ -26,6 +28,9 @@ from .catalog import CatalogEntry, CatalogStore
 from .const import CONF_TMDB_API_KEY, DOMAIN, TMDB_IMAGE_URL, UPDATE_INTERVAL
 
 _LOGGER = logging.getLogger(__name__)
+
+# The API gives the watched flag of box-set films one by one: read them less often.
+CHILDREN_WATCHED_INTERVAL = timedelta(hours=6)
 
 type MyMoviesConfigEntry = ConfigEntry[MyMoviesCoordinator]
 
@@ -42,6 +47,7 @@ class MyMoviesData:
 
     titles: dict[str, CollectionTitle]  # by lower-case title ID
     box_sets: dict[str, list[BoxSetChild]]  # films of each box set, by lower-case box set ID
+    children_watched: dict[str, bool] = field(default_factory=dict)  # by lower-case film ID
 
 
 class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
@@ -68,6 +74,8 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
         self._thumbnails: dict[str, bytes | None] = {}
         self._fetching = False
         self._box_set_cache: dict[str, list[BoxSetChild]] = {}
+        self._children_watched: dict[str, bool] = {}
+        self._children_checked: datetime | None = None
 
     async def _async_update_data(self) -> MyMoviesData:
         try:
@@ -80,7 +88,10 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             raise UpdateFailed(str(err)) from err
         by_id = {t.id.lower(): t for t in titles}
         await self._async_complete_box_sets(by_id, box_sets)
-        data = MyMoviesData(titles=by_id, box_sets=box_sets)
+        await self._async_update_children_watched(box_sets)
+        data = MyMoviesData(
+            titles=by_id, box_sets=box_sets, children_watched=dict(self._children_watched)
+        )
         self._update_catalog_issue(data)
         if self._tmdb_missing(data):
             self.config_entry.async_create_background_task(
@@ -108,6 +119,35 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
                     continue
             if self._box_set_cache[key]:
                 box_sets[key] = self._box_set_cache[key]
+
+    async def _async_update_children_watched(
+        self, box_sets: dict[str, list[BoxSetChild]]
+    ) -> None:
+        """Read the watched flag of box-set films: all every few hours, new ones at once."""
+        ids = {c.id.lower(): c.id for children in box_sets.values() for c in children}
+        now = dt_util.utcnow()
+        due = self._children_checked is None or now - self._children_checked >= CHILDREN_WATCHED_INTERVAL
+        todo = list(ids) if due else [key for key in ids if key not in self._children_watched]
+        if not todo:
+            return
+        limit = asyncio.Semaphore(4)
+
+        async def read(key: str) -> None:
+            async with limit:
+                try:
+                    self._children_watched[key] = await self.client.async_get_watched(ids[key])
+                except MyMoviesError as err:
+                    _LOGGER.debug("Watched flag of %s not readable: %s", ids[key], err)
+
+        await asyncio.gather(*(read(key) for key in todo))
+        if due:
+            self._children_checked = now
+
+    def set_child_watched(self, child_id: str, watched: bool) -> None:
+        """Record a watched change made from Home Assistant on a box-set film."""
+        self._children_watched[child_id.lower()] = watched
+        if self.data:
+            self.data.children_watched[child_id.lower()] = watched
 
     def _update_catalog_issue(self, data: MyMoviesData) -> None:
         """Ask for a (new) export when titles have no name."""
@@ -222,6 +262,7 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             "disc_type": child.disc_type,
             "poster": poster or None,
             "description": found.get("overview", ""),
+            "watched": self.data.children_watched.get(child.id.lower(), False) if self.data else False,
         }
 
     def describe(self, title: CollectionTitle, *, details: bool = False) -> dict[str, Any]:
@@ -237,12 +278,16 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             "watched": title.watched,
             "poster": self.poster_url(title),
         }
+        children = self.data.box_sets.get(title.id.lower(), []) if self.data else []
         if details:
             default = CatalogEntry("", "", "", None, None)
             for name in DETAIL_FIELDS:
                 data[name] = getattr(entry or default, name)
+            data["children"] = [self.describe_child(c) for c in children]
+        elif children:
+            keep = ("id", "title", "original_title", "year", "watched")
             data["children"] = [
-                self.describe_child(c) for c in self.data.box_sets.get(title.id.lower(), [])
+                {k: v for k, v in self.describe_child(c).items() if k in keep} for c in children
             ]
         return data
 

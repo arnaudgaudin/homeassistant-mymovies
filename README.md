@@ -64,7 +64,8 @@ The collection is refreshed every hour and right after each change.
 | `mymovies.get_titles` | Returns the collection with names, IMDb IDs, watched flags and posters |
 
 `title` accepts the title name, the original title, the IMDb ID, the collection
-number or the My Movies title ID. When several titles match (for example the
+number or the My Movies title ID. Films inside box sets can be marked by name too:
+they have their own watched state in My Movies. When several titles match (for example the
 Blu-ray and the 4K edition of the same film), use the collection number.
 
 ```yaml
@@ -88,7 +89,7 @@ of covers and offers:
   running time, production year, release date, parental rating, added date),
   ascending or descending;
 - search (title, original title, director, cast) and filters (type, watched);
-- a ✓ badge on watched titles;
+- a ✓ badge on watched titles, including films inside box sets;
 - **Expand box sets**: show the films of each box set instead of the box set itself;
 - a details dialog (synopsis, director, cast, genres, runtime, ratings, dates,
   box set contents) with **Mark as watched** / **Clear watched** buttons.

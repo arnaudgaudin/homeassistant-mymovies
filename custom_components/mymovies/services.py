@@ -19,7 +19,7 @@ from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.util import dt as dt_util
 
-from .api import CollectionTitle, MyMoviesError
+from .api import BoxSetChild, CollectionTitle, MyMoviesError
 from .const import ATTR_NOTES, ATTR_TITLE, DOMAIN
 from .coordinator import MyMoviesConfigEntry
 
@@ -54,43 +54,60 @@ def _get_entry(hass: HomeAssistant, call: ServiceCall) -> MyMoviesConfigEntry:
     return entries[0]
 
 
-def _resolve(entry: MyMoviesConfigEntry, ref: str) -> CollectionTitle:
-    """Find a title by ID, collection number, IMDb ID or (original) title."""
+def _resolve(entry: MyMoviesConfigEntry, ref: str) -> CollectionTitle | BoxSetChild:
+    """Find a title or a box-set film by ID, collection number, IMDb ID or (original) title."""
     coordinator = entry.runtime_data
     titles = coordinator.data.titles
+    films = [
+        (child, titles.get(parent))
+        for parent, children in coordinator.data.box_sets.items()
+        for child in children
+    ]
     ref = ref.strip()
-    if match := titles.get(ref.lower()):
+    key = ref.lower()
+    if match := titles.get(key):
         return match
+    if match := next((child for child, _ in films if child.id.lower() == key), None):
+        return match
+    candidates: list[tuple[CollectionTitle | BoxSetChild, str]]
     if ref.isdigit():
-        matches = [t for t in titles.values() if t.collection_number == int(ref)]
-    elif ref.lower().startswith("tt"):
-        matches = [
-            t for t in titles.values()
-            if (info := coordinator.entry_for(t)) and info.imdb == ref.lower()
+        candidates = [
+            (t, f"#{t.collection_number}") for t in titles.values() if t.collection_number == int(ref)
+        ]
+    elif key.startswith("tt"):
+        candidates = [
+            (t, f"#{t.collection_number}")
+            for t in titles.values()
+            if (info := coordinator.entry_for(t)) and info.imdb == key
         ]
     else:
         wanted = _norm(ref)
-        matches = [
-            t for t in titles.values()
+        candidates = [
+            (t, f"#{t.collection_number}")
+            for t in titles.values()
             if (info := coordinator.entry_for(t))
             and wanted in (_norm(info.title), _norm(info.original_title))
+        ] + [
+            (child, f"#{parent.collection_number if parent else '?'} › {child.title}")
+            for child, parent in films
+            if wanted in (_norm(child.title), _norm(child.original_title))
         ]
-    if not matches:
+    if not candidates:
         raise ServiceValidationError(
             translation_domain=DOMAIN,
             translation_key="title_not_found",
             translation_placeholders={"title": ref},
         )
-    if len(matches) > 1:
+    if len(candidates) > 1:
         raise ServiceValidationError(
             translation_domain=DOMAIN,
             translation_key="title_ambiguous",
             translation_placeholders={
                 "title": ref,
-                "numbers": ", ".join(str(t.collection_number) for t in matches),
+                "numbers": ", ".join(label for _, label in candidates),
             },
         )
-    return matches[0]
+    return candidates[0][0]
 
 
 @callback
@@ -112,6 +129,8 @@ def async_setup_services(hass: HomeAssistant) -> None:
                 translation_key="api_error",
                 translation_placeholders={"error": str(err)},
             ) from err
+        if isinstance(title, BoxSetChild):
+            entry.runtime_data.set_child_watched(title.id, mark)
         await entry.runtime_data.async_request_refresh()
 
     async def mark_watched(call: ServiceCall) -> None:

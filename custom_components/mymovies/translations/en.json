@@ -61,7 +61,7 @@
   },
   "exceptions": {
     "title_not_found": { "message": "No title in the collection matches \"{title}\"." },
-    "title_ambiguous": { "message": "Several titles match \"{title}\" (collection numbers {numbers}); use one of the numbers." },
+    "title_ambiguous": { "message": "Several titles match \"{title}\": {numbers}. Use the collection number or the title ID." },
     "no_entry": { "message": "No My Movies account is loaded." },
     "several_entries": { "message": "Several My Movies accounts are loaded; set config_entry_id." },
     "api_error": { "message": "My Movies rejected the request: {error}" }
@@ -71,7 +71,7 @@
       "name": "Mark as watched",
       "description": "Logs a viewing of a title in My Movies.",
       "fields": {
-        "title": { "name": "Title", "description": "Title name, original title, IMDb ID, collection number or title ID." },
+        "title": { "name": "Title", "description": "Title name (also a film of a box set), original title, IMDb ID, collection number or title ID." },
         "notes": { "name": "Notes", "description": "Optional note saved with the viewing." },
         "config_entry_id": { "name": "Account", "description": "Account to use when several are configured." }
       }
@@ -80,7 +80,7 @@
       "name": "Clear watched",
       "description": "Removes every logged viewing of a title in My Movies.",
       "fields": {
-        "title": { "name": "Title", "description": "Title name, original title, IMDb ID, collection number or title ID." },
+        "title": { "name": "Title", "description": "Title name (also a film of a box set), original title, IMDb ID, collection number or title ID." },
         "config_entry_id": { "name": "Account", "description": "Account to use when several are configured." }
       }
     },

@@ -153,7 +153,7 @@ class MyMoviesPanel extends HTMLElement {
             group: t.group,
             parental_rating: t.parental_rating,
             disc_type: c.disc_type || t.disc_type,
-            watched: false,
+            watched: !!c.watched,
           });
         }
       } else {
@@ -167,7 +167,7 @@ class MyMoviesPanel extends HTMLElement {
     for (const t of this._titles || []) {
       if (`t:${t.id}` === key) return { ...t, key };
       for (const c of t.children || []) {
-        if (`c:${c.id}` === key) return { ...c, key, child: true, parent: t, watched: false };
+        if (`c:${c.id}` === key) return { ...c, key, child: true, parent: t, watched: !!c.watched };
       }
     }
     return null;
@@ -383,16 +383,19 @@ class MyMoviesPanel extends HTMLElement {
                 <div class="children">
                   ${children.map((c) => `
                     <button class="mini" data-open="c:${esc(c.id)}" title="${esc(c.title)}">
-                      ${c.poster ? `<img loading="lazy" src="${esc(c.poster)}" alt="" />` : `<div class="noposter">${esc(c.title)}</div>`}
+                      <span class="mini-cover">
+                        ${c.poster ? `<img loading="lazy" src="${esc(c.poster)}" alt="" />` : `<div class="noposter">${esc(c.title)}</div>`}
+                        ${c.watched ? `<span class="badge small" title="${esc(t.watched)}">${CHECK}</span>` : ""}
+                      </span>
                       <span>${esc(c.title)}${c.year ? ` (${esc(c.year)})` : ""}</span>
                     </button>`).join("")}
                 </div>` : ""}
-              ${!i.child ? `
+              ${`
                 <div class="actions">
                   ${this._dialog.error ? `<span class="error">${esc(t.failed)} : ${esc(this._dialog.error)}</span>` : ""}
                   ${i.watched ? `<button class="secondary" data-action="clear" ${this._busy ? "disabled" : ""}>${esc(t.clearWatched)}</button>` : ""}
                   <button class="primary" data-action="mark" ${this._busy ? "disabled" : ""}>${esc(t.markWatched)}</button>
-                </div>` : ""}
+                </div>`}
             </div>
           </div>
         </div>
@@ -474,7 +477,10 @@ const STYLE = `
   h3 { margin: 16px 0 8px; font-size: 16px; font-weight: 500; }
   .children { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
   .mini { display: flex; flex-direction: column; gap: 4px; padding: 0; border: none; background: none; text-align: left; cursor: pointer; font-size: 12px; }
-  .mini img, .mini .noposter { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 6px; background: var(--secondary-background-color, #2224); }
+  .mini-cover { position: relative; display: block; }
+  .mini img, .mini .noposter { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 6px; background: var(--secondary-background-color, #2224); display: block; }
+  .badge.small { width: 20px; height: 20px; top: 4px; right: 4px; }
+  .badge.small svg { width: 14px; height: 14px; }
   .actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 16px; }
   .actions .error { color: var(--error-color, #db4437); font-size: 13px; margin-right: auto; }
   .primary, .secondary { height: 36px; padding: 0 16px; border-radius: 18px; border: none; cursor: pointer; font-weight: 500; }

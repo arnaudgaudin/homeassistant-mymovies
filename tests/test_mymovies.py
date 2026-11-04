@@ -22,6 +22,13 @@ from custom_components.mymovies.const import DOMAIN
 CLIENT = "custom_components.mymovies.api.MyMoviesClient"
 
 
+@pytest.fixture(autouse=True)
+def films_not_watched():
+    """Box-set films start unwatched (their flag is read one by one)."""
+    with patch(f"{CLIENT}.async_get_watched", return_value=False) as mock:
+        yield mock
+
+
 def _title(number: int, watched: bool = False) -> CollectionTitle:
     return CollectionTitle(
         id=f"0000000{number}-aaaa-bbbb-cccc-dddddddddddd",
@@ -196,3 +203,35 @@ async def test_box_sets_from_catalog(hass: HomeAssistant) -> None:
     # Only #4 has no IMDb ID: one call in total thanks to the cache.
     assert per_box.await_count == 1
     assert coordinator.data.box_sets[TITLES[3].id.lower()] == films
+
+
+async def test_box_set_film_watched(hass: HomeAssistant) -> None:
+    """A film inside a box set is marked by name; same name on its own disc is ambiguous."""
+    entry = await _setup(hass)
+    coordinator = entry.runtime_data
+    coordinator.store.catalog = CATALOG
+    client = coordinator.client
+    with (
+        patch.object(client, "async_mark_watched", AsyncMock()) as mark,
+        patch(f"{CLIENT}.async_get_titles", return_value=TITLES),
+        patch(f"{CLIENT}.async_get_box_set_children", return_value=BOX_SETS),
+    ):
+        await hass.services.async_call(
+            DOMAIN, "mark_watched", {"title": "Matrix Reloaded"}, blocking=True
+        )
+        assert mark.await_args.args[0] == "child-2"
+    assert coordinator.data.children_watched["child-2"] is True
+
+    response = await hass.services.async_call(
+        DOMAIN, "get_titles", {}, blocking=True, return_response=True
+    )
+    box = next(t for t in response["titles"] if t["collection_number"] == 4)
+    assert [(c["title"], c["watched"]) for c in box["children"]] == [
+        ("Matrix", False),
+        ("Matrix Reloaded", True),
+    ]
+
+    coordinator.store.catalog = {**CATALOG, 1: CatalogEntry("Matrix", "The Matrix", "Matrix", "tt0133093", 1999)}
+    with pytest.raises(ServiceValidationError) as err:
+        await hass.services.async_call(DOMAIN, "mark_watched", {"title": "the matrix"}, blocking=True)
+    assert err.value.translation_placeholders["numbers"] == "#1, #4 › Matrix"

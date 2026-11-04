@@ -211,6 +211,15 @@ class MyMoviesClient:
         children.sort(key=lambda c: (c.year or 0, c.title))
         return children
 
+    async def async_get_watched(self, title_id: str) -> bool:
+        """Watched flag of one title, including a film inside a box set."""
+        response = await self._call(
+            "LoadDiscTitlePersonalData",
+            {**self._auth(), "Reference": "", "TitleId": title_id, "Locale": 0},
+        )
+        personal = next(response.iter("PersonalData"), None)
+        return personal is not None and personal.get("Watched") == "True"
+
     async def async_mark_watched(self, title_id: str, when: datetime, notes: str = "") -> None:
         """Log one viewing of a title (sets its watched flag)."""
         await self._call(

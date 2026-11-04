@@ -61,7 +61,7 @@
   },
   "exceptions": {
     "title_not_found": { "message": "Aucun titre de la collection ne correspond à « {title} »." },
-    "title_ambiguous": { "message": "Plusieurs titres correspondent à « {title} » (numéros {numbers}) ; utilisez l'un de ces numéros." },
+    "title_ambiguous": { "message": "Plusieurs titres correspondent à « {title} » : {numbers}. Utilisez le numéro de collection ou l'ID du titre." },
     "no_entry": { "message": "Aucun compte My Movies n'est chargé." },
     "several_entries": { "message": "Plusieurs comptes My Movies sont chargés ; précisez config_entry_id." },
     "api_error": { "message": "My Movies a refusé la requête : {error}" }
@@ -71,7 +71,7 @@
       "name": "Marquer comme vu",
       "description": "Enregistre un visionnage du titre dans My Movies.",
       "fields": {
-        "title": { "name": "Titre", "description": "Nom du titre, titre original, ID IMDb, numéro dans la collection ou ID du titre." },
+        "title": { "name": "Titre", "description": "Nom du titre (y compris un film de coffret), titre original, ID IMDb, numéro dans la collection ou ID du titre." },
         "notes": { "name": "Notes", "description": "Note facultative enregistrée avec le visionnage." },
         "config_entry_id": { "name": "Compte", "description": "Compte à utiliser s'il y en a plusieurs." }
       }
@@ -80,7 +80,7 @@
       "name": "Effacer le « vu »",
       "description": "Supprime tous les visionnages enregistrés du titre dans My Movies.",
       "fields": {
-        "title": { "name": "Titre", "description": "Nom du titre, titre original, ID IMDb, numéro dans la collection ou ID du titre." },
+        "title": { "name": "Titre", "description": "Nom du titre (y compris un film de coffret), titre original, ID IMDb, numéro dans la collection ou ID du titre." },
         "config_entry_id": { "name": "Compte", "description": "Compte à utiliser s'il y en a plusieurs." }
       }
     },
