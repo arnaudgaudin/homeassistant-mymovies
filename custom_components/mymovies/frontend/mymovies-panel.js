@@ -81,6 +81,10 @@ const LIST = icon("M9 5v4h12V5zM4 9h4V5H4zm5 10h12v-4H9zm-5 0h4v-4H4zm5-5h12v-4H
 const esc = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 
+// My Movies separates synopsis paragraphs with ";" (often without a full stop).
+const paragraphs = (text) =>
+  String(text ?? "").replace(/\s*;\s*(?=[A-ZÀ-ÖØ-Þ«"'(\[])/g, "\n");
+
 const norm = (value) =>
   String(value ?? "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
@@ -260,13 +264,13 @@ class MyMoviesPanel extends HTMLElement {
       <div class="toolbar">
         <input id="q" type="search" placeholder="${esc(t.search)}" aria-label="${esc(t.search)}" />
         <div class="sortgroup">
-          <select id="sort" aria-label="${esc(t.sort.title)}">${sortOptions}</select>
+          <span class="select"><select id="sort" aria-label="${esc(t.sort.title)}">${sortOptions}</select></span>
           <button class="icon dir ${st.dir}" id="dir" title="${esc(st.dir === "asc" ? t.ascending : t.descending)}" aria-label="${esc(st.dir === "asc" ? t.ascending : t.descending)}">${SORT_ICON}</button>
         </div>
-        <select id="type" aria-label="${esc(t.allTypes)}">
+        <span class="select"><select id="type" aria-label="${esc(t.allTypes)}">
           ${option("all", t.allTypes, st.type)}${option("movies", t.movies, st.type)}
           ${option("series", t.series, st.type)}${option("documentaries", t.documentaries, st.type)}
-        </select>
+        </select></span>
         <div class="segmented" id="watched" role="radiogroup" aria-label="${esc(t.watchedFilter)}">
           ${seg("watched", "watched", esc(t.segWatched), st.watched)}${seg("watched", "all", esc(t.segAll), st.watched)}${seg("watched", "unwatched", esc(t.segUnwatched), st.watched)}
         </div>
@@ -456,7 +460,7 @@ class MyMoviesPanel extends HTMLElement {
           ${i.original_title && i.original_title !== title ? `<div class="original">${esc(i.original_title)}</div>` : ""}
           <div class="meta">${meta.map(esc).join(" · ")}</div>
           ${i.genres?.length ? `<div class="chips">${i.genres.map((g) => `<span>${esc(g)}</span>`).join("")}</div>` : ""}
-          ${i.description ? `<p class="description">${esc(i.description)}</p>` : ""}
+          ${i.description ? `<p class="description">${esc(paragraphs(i.description))}</p>` : ""}
           <div class="info-rows">
             ${this._info(t.director, i.director)}
             ${this._info(t.cast, (i.actors || []).join(", "))}
@@ -568,7 +572,13 @@ const STYLE = `
   .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 16px; }
   .toolbar input[type="search"], .toolbar select { height: 36px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color); font-size: 14px; box-sizing: border-box; }
   .toolbar input[type="search"] { flex: 0 1 200px; min-width: 120px; }
-  .toolbar select { flex: none; width: auto; padding-right: 28px; }
+  /* Own chevron: the native arrow of macOS sits against the border. */
+  .select { position: relative; display: inline-flex; flex: none; }
+  .select::after { content: ""; position: absolute; right: 10px; top: 50%; width: 18px; height: 18px; margin-top: -9px; pointer-events: none; background: var(--secondary-text-color);
+    -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7.41 8.58 12 13.17l4.59-4.59L18 10l-6 6-6-6z'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M7.41 8.58 12 13.17l4.59-4.59L18 10l-6 6-6-6z'/%3E%3C/svg%3E") center / contain no-repeat; }
+  .toolbar select { -webkit-appearance: none; appearance: none; width: auto; padding: 0 36px 0 12px; cursor: pointer; }
+  .toolbar select option { background: var(--card-background-color); color: var(--primary-text-color); }
   .sortgroup { display: flex; gap: 4px; }
   .check { display: flex; align-items: center; gap: 6px; font-size: 14px; cursor: pointer; user-select: none; white-space: nowrap; }
   .icon { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: none; border-radius: 50%; background: transparent; cursor: pointer; flex: none; }
