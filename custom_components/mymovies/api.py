@@ -44,6 +44,20 @@ class CollectionTitle:
     covers_changed: str
 
 
+@dataclass(slots=True)
+class BoxSetChild:
+    """One film inside a box set of the collection."""
+
+    id: str
+    parent_id: str
+    title: str
+    original_title: str
+    year: int | None
+    edition: str
+    disc_type: str
+    thumbnail: str  # My Movies cover URL (200 px wide at best)
+
+
 class MyMoviesClient:
     """Talk to the My Movies SOAP API with the account's credentials."""
 
@@ -130,6 +144,40 @@ class MyMoviesClient:
                 )
             )
         return titles
+
+    async def async_get_box_set_children(self) -> dict[str, list[BoxSetChild]]:
+        """Films of every box set in the collection, keyed by lower-case box set ID."""
+        response = await self._call(
+            "GetBoxSetChildTitlesForUser",
+            {
+                "Handshake": "",
+                "UserName": self._username,
+                "Password": self._password,
+                "Reference": "",
+                "Locale": 0,
+            },
+        )
+        box_sets: dict[str, list[BoxSetChild]] = {}
+        for el in response.iter("Title"):
+            parent = (el.get("ParentID") or "").lower()
+            if not parent:
+                continue
+            year = el.get("Year") or ""
+            box_sets.setdefault(parent, []).append(
+                BoxSetChild(
+                    id=el.get("ChildID", ""),
+                    parent_id=parent,
+                    title=el.get("Title", ""),
+                    original_title=el.get("OriginalTitle", ""),
+                    year=int(year) if year.isdigit() else None,
+                    edition=(el.get("Edition") or "").strip(),
+                    disc_type=el.get("Type", ""),
+                    thumbnail=el.get("BigThumbnail") or el.get("Thumbnail") or "",
+                )
+            )
+        for children in box_sets.values():
+            children.sort(key=lambda c: (c.year or 0, c.title))
+        return box_sets
 
     async def async_mark_watched(self, title_id: str, when: datetime, notes: str = "") -> None:
         """Log one viewing of a title (sets its watched flag)."""

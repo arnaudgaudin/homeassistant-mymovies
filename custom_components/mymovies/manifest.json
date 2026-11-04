@@ -7,13 +7,15 @@
   "config_flow": true,
   "dependencies": [
     "file_upload",
+    "frontend",
     "http",
-    "media_source"
+    "panel_custom",
+    "websocket_api"
   ],
   "documentation": "https://github.com/arnaudgaudin/homeassistant-mymovies",
   "integration_type": "service",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/arnaudgaudin/homeassistant-mymovies/issues",
   "requirements": [],
-  "version": "0.1.0"
+  "version": "0.2.0"
 }

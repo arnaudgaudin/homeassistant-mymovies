@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 import logging
 from typing import Any
@@ -14,7 +15,13 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from . import tmdb
-from .api import CollectionTitle, MyMoviesAuthError, MyMoviesClient, MyMoviesError
+from .api import (
+    BoxSetChild,
+    CollectionTitle,
+    MyMoviesAuthError,
+    MyMoviesClient,
+    MyMoviesError,
+)
 from .catalog import CatalogEntry, CatalogStore
 from .const import CONF_TMDB_API_KEY, DOMAIN, TMDB_IMAGE_URL, UPDATE_INTERVAL
 
@@ -22,16 +29,23 @@ _LOGGER = logging.getLogger(__name__)
 
 type MyMoviesConfigEntry = ConfigEntry[MyMoviesCoordinator]
 
+DETAIL_FIELDS = (
+    "sort_title", "runtime", "rating", "personal_rating", "parental_rating", "release_date",
+    "added", "disc_type", "media_type", "group", "edition", "genres", "director", "actors",
+    "description",
+)
+
 
 @dataclass(slots=True)
 class MyMoviesData:
-    """Collection snapshot: titles keyed by their lower-case ID."""
+    """Collection snapshot."""
 
-    titles: dict[str, CollectionTitle]
+    titles: dict[str, CollectionTitle]  # by lower-case title ID
+    box_sets: dict[str, list[BoxSetChild]]  # films of each box set, by lower-case box set ID
 
 
 class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
-    """Poll the collection and its watched flags; hold the imported catalog."""
+    """Poll the collection, its watched flags and box sets; hold the imported catalog."""
 
     config_entry: MyMoviesConfigEntry
 
@@ -52,16 +66,23 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
         self.client = client
         self.store = store
         self._thumbnails: dict[str, bytes | None] = {}
+        self._fetching = False
 
     async def _async_update_data(self) -> MyMoviesData:
         try:
-            titles = await self.client.async_get_titles()
+            titles, box_sets = await asyncio.gather(
+                self.client.async_get_titles(), self.client.async_get_box_set_children()
+            )
         except MyMoviesAuthError as err:
             raise ConfigEntryAuthFailed(str(err)) from err
         except MyMoviesError as err:
             raise UpdateFailed(str(err)) from err
-        data = MyMoviesData(titles={t.id.lower(): t for t in titles})
+        data = MyMoviesData(titles={t.id.lower(): t for t in titles}, box_sets=box_sets)
         self._update_catalog_issue(data)
+        if self._tmdb_missing(data):
+            self.config_entry.async_create_background_task(
+                self.hass, self.async_fetch_tmdb(data), f"{DOMAIN}_tmdb_{self.config_entry.entry_id}"
+            )
         return data
 
     def _update_catalog_issue(self, data: MyMoviesData) -> None:
@@ -81,20 +102,108 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             translation_placeholders={"account": self.config_entry.title, "count": str(missing)},
         )
 
+    def _missing_imdb(self) -> list[str]:
+        return sorted(
+            {e.imdb for e in self.store.catalog.values() if e.imdb and e.imdb not in self.store.posters}
+        )
+
+    def _missing_children(self, data: MyMoviesData) -> list[BoxSetChild]:
+        return [
+            child
+            for children in data.box_sets.values()
+            for child in children
+            if child.id not in self.store.children
+        ]
+
+    def _missing_box_posters(self, data: MyMoviesData) -> list[CollectionTitle]:
+        """Titles without IMDb ID (box sets) whose TMDB collection was not looked up."""
+        return [
+            t
+            for key, t in data.titles.items()
+            if (entry := self.entry_for(t)) and not entry.imdb and key not in self.store.box_posters
+        ]
+
+    def _tmdb_missing(self, data: MyMoviesData) -> bool:
+        return bool(self.config_entry.options.get(CONF_TMDB_API_KEY)) and bool(
+            self._missing_imdb() or self._missing_children(data) or self._missing_box_posters(data)
+        )
+
+    async def async_fetch_tmdb(self, data: MyMoviesData) -> None:
+        """Look up the TMDB posters and box-set films not cached yet."""
+        api_key = self.config_entry.options.get(CONF_TMDB_API_KEY)
+        if not api_key or self._fetching:
+            return
+        self._fetching = True
+        session = async_get_clientsession(self.hass)
+        changed = False
+        try:
+            for imdb in self._missing_imdb():
+                self.store.posters[imdb] = await tmdb.async_find_poster(session, api_key, imdb)
+                changed = True
+            for child in self._missing_children(data):
+                self.store.children[child.id] = await tmdb.async_search_movie(
+                    session,
+                    api_key,
+                    child.original_title or child.title,
+                    child.year,
+                    self.hass.config.language,
+                )
+                changed = True
+            for title in self._missing_box_posters(data):
+                entry = self.entry_for(title)
+                self.store.box_posters[title.id.lower()] = await tmdb.async_search_collection(
+                    session, api_key, entry.title if entry else "", self.hass.config.language
+                )
+                changed = True
+        except tmdb.TmdbError as err:
+            _LOGGER.warning("TMDB lookups stopped: %s", err)
+        finally:
+            self._fetching = False
+            if changed:
+                await self.store.async_save()
+                self.async_update_listeners()
+
     def entry_for(self, title: CollectionTitle) -> CatalogEntry | None:
         """Catalog data of a title, when the export knows it."""
         return self.store.catalog.get(title.collection_number)
 
     def poster_url(self, title: CollectionTitle) -> str | None:
-        """TMDB poster URL of a title, when known."""
+        """Best TMDB poster of a title: its own, its box set's collection, or its first film's."""
         entry = self.entry_for(title)
-        path = self.store.posters.get(entry.imdb) if entry and entry.imdb else None
+        if entry and entry.imdb:
+            path = self.store.posters.get(entry.imdb)
+        else:
+            path = self.store.box_posters.get(title.id.lower())
+            if not path and self.data:
+                path = next(
+                    (
+                        found["poster"]
+                        for child in self.data.box_sets.get(title.id.lower(), [])
+                        if (found := self.store.children.get(child.id, {})).get("poster")
+                    ),
+                    None,
+                )
         return f"{TMDB_IMAGE_URL}{path}" if path else None
 
-    def describe(self, title: CollectionTitle) -> dict[str, Any]:
-        """Everything known about a title, for service responses."""
-        entry = self.entry_for(title)
+    def describe_child(self, child: BoxSetChild) -> dict[str, Any]:
+        """One film of a box set, for the panel."""
+        found = self.store.children.get(child.id, {})
+        poster = f"{TMDB_IMAGE_URL}{found['poster']}" if found.get("poster") else child.thumbnail
         return {
+            "id": child.id,
+            "title": child.title,
+            "original_title": child.original_title,
+            "year": child.year,
+            "edition": child.edition,
+            "disc_type": child.disc_type,
+            "poster": poster or None,
+            "description": found.get("overview", ""),
+        }
+
+    def describe(self, title: CollectionTitle, *, details: bool = False) -> dict[str, Any]:
+        """Everything known about a title (details: also the export columns and box set)."""
+        entry = self.entry_for(title)
+        data: dict[str, Any] = {
             "id": title.id,
             "collection_number": title.collection_number,
             "title": entry.title if entry else None,
@@ -104,6 +213,14 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             "watched": title.watched,
             "poster": self.poster_url(title),
         }
+        if details:
+            default = CatalogEntry("", "", "", None, None)
+            for name in DETAIL_FIELDS:
+                data[name] = getattr(entry or default, name)
+            data["children"] = [
+                self.describe_child(c) for c in self.data.box_sets.get(title.id.lower(), [])
+            ]
+        return data
 
     async def async_get_thumbnail(self, title_id: str) -> bytes | None:
         """My Movies cover thumbnail of a title of this collection (cached)."""
@@ -113,22 +230,3 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
         if key not in self._thumbnails:
             self._thumbnails[key] = await self.client.async_get_thumbnail(self.data.titles[key].id)
         return self._thumbnails[key]
-
-    async def async_fetch_posters(self) -> None:
-        """Look up the TMDB posters not cached yet (needs a TMDB API key)."""
-        api_key = self.config_entry.options.get(CONF_TMDB_API_KEY)
-        if not api_key:
-            return
-        session = async_get_clientsession(self.hass)
-        todo = sorted(
-            {e.imdb for e in self.store.catalog.values() if e.imdb and e.imdb not in self.store.posters}
-        )
-        for imdb in todo:
-            try:
-                self.store.posters[imdb] = await tmdb.async_find_poster(session, api_key, imdb)
-            except tmdb.TmdbError as err:
-                _LOGGER.warning("TMDB poster lookup stopped at %s: %s", imdb, err)
-                break
-        if todo:
-            await self.store.async_save()
-            self.async_update_listeners()

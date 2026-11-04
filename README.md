@@ -4,7 +4,9 @@ Connect your [My Movies](https://www.mymovies.dk) collection to Home Assistant:
 
 - see how many titles you own and how many you have watched;
 - mark a title as watched (or clear it) from an automation, a script or a voice assistant;
-- browse your collection as a **wall of covers** in the Home Assistant media browser.
+- browse your collection in a **My Movies sidebar panel**: a wall of covers with the
+  sort options of My Movies, filters, watched badges, expandable box sets and a
+  details dialog to mark titles as watched.
 
 > **Unofficial integration.** It is not affiliated with or endorsed by My Movies.
 > It uses the My Movies cloud API with your own account, which is not documented
@@ -39,9 +41,10 @@ My Movies app:
 3. Re-import a fresh export after adding titles; a repair notice tells you when
    titles are missing.
 
-Covers come from My Movies as small thumbnails. For high-resolution posters,
-add a free [TMDB API key](https://www.themoviedb.org/settings/api) (v3) in the
-same options form: posters are then looked up by IMDb ID.
+Add a free [TMDB API key](https://www.themoviedb.org/settings/api) (v3) in the
+same options form for high-resolution posters: titles are looked up by IMDb ID,
+box sets by collection name and the films of box sets by title. Without a key, or
+when TMDB has no poster, the smaller My Movies covers are used.
 
 ## Entities
 
@@ -76,11 +79,22 @@ action: mymovies.get_titles
 response_variable: collection
 ```
 
-## Film wall
+## My Movies panel
 
-Open **Media → My Movies** to browse the collection as a grid of covers, sorted
-by title. Watched titles are marked with ✓. Titles are physical discs, so they
-can be browsed but not played.
+A **My Movies** entry is added to the sidebar. It shows the collection as a wall
+of covers and offers:
+
+- the sort options of My Movies (title, collection number, rating, personal rating,
+  running time, production year, release date, parental rating, added date),
+  ascending or descending;
+- search (title, original title, director, cast) and filters (type, watched);
+- a ✓ badge on watched titles;
+- **Expand box sets**: show the films of each box set instead of the box set itself;
+- a details dialog (synopsis, director, cast, genres, runtime, ratings, dates,
+  box set contents) with **Mark as watched** / **Clear watched** buttons.
+
+The details come from the imported export: re-import it after updating the
+integration to fill in new columns.
 
 ## Privacy
 

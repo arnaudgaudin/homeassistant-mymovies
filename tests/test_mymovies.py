@@ -15,7 +15,7 @@ from homeassistant.data_entry_flow import FlowResultType
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import issue_registry as ir
 
-from custom_components.mymovies.api import CollectionTitle, MyMoviesAuthError
+from custom_components.mymovies.api import BoxSetChild, CollectionTitle, MyMoviesAuthError
 from custom_components.mymovies.catalog import CatalogEntry, InvalidExportError, parse_export
 from custom_components.mymovies.const import DOMAIN
 
@@ -34,11 +34,18 @@ def _title(number: int, watched: bool = False) -> CollectionTitle:
     )
 
 
-TITLES = [_title(1), _title(2, watched=True), _title(3)]
+TITLES = [_title(1), _title(2, watched=True), _title(3), _title(4)]
+BOX_SETS = {
+    TITLES[3].id.lower(): [
+        BoxSetChild("child-1", TITLES[3].id.lower(), "Matrix", "The Matrix", 1999, "", "4K Ultra HD", "https://cdn/1.jpg"),
+        BoxSetChild("child-2", TITLES[3].id.lower(), "Matrix Reloaded", "The Matrix Reloaded", 2003, "", "4K Ultra HD", ""),
+    ]
+}
 CATALOG = {
     1: CatalogEntry("Sin City", "Sin City", "Sin City", "tt0401792", 2005),
     2: CatalogEntry("Avatar", "Avatar", "Avatar", "tt0499549", 2009),
     3: CatalogEntry("Avatar", "Avatar", "Avatar", "tt0499549", 2009),
+    4: CatalogEntry("The Matrix Trilogy", "The Matrix Trilogy", "Matrix", None, 1999),
 }
 
 
@@ -46,15 +53,22 @@ def test_parse_export(tmp_path: Path) -> None:
     """The export is keyed by collection number; box sets get no IMDb ID."""
     path = tmp_path / "export.csv"
     path.write_text(
-        "﻿Collection Number,Title,Original Title,Sort Title,IMDB Id,Production Year\n"
-        '1,"Le Seigneur des anneaux","The Lord of the Rings","Seigneur",tt0120737,2001\n'
-        '2,"Trilogie","Trilogie","Trilogie",tt0000000,\n',
+        "\ufeffCollection Number,Title,Original Title,Sort Title,IMDB Id,Production Year,"
+        "Running Time,Rating,Genres,Actors,Description\n"
+        '1,"Le Seigneur des anneaux","The Lord of the Rings","Seigneur",tt0120737,2001,'
+        '2:58,8.9," Fantasy, Adventure"," Elijah Wood, Ian McKellen","Un anneau.; Une quête.; ; Een ring."\n'
+        '2,"Trilogie","Trilogie","Trilogie",tt0000000,,,,,,-\n',
         encoding="utf-8",
     )
     catalog = parse_export(path)
     assert catalog[1].original_title == "The Lord of the Rings"
     assert catalog[1].imdb == "tt0120737" and catalog[1].year == 2001
+    assert catalog[1].runtime == 178 and catalog[1].rating == 8.9
+    assert catalog[1].genres == ["Fantasy", "Adventure"]
+    assert catalog[1].actors == ["Elijah Wood", "Ian McKellen"]
+    assert catalog[1].description == "Un anneau.\nUne quête."
     assert catalog[2].imdb is None and catalog[2].year is None
+    assert catalog[2].description == "" and catalog[2].runtime is None
 
     bad = tmp_path / "bad.csv"
     bad.write_text("Name,Year\nfoo,2000\n", encoding="utf-8")
@@ -89,7 +103,10 @@ async def _setup(hass: HomeAssistant) -> MockConfigEntry:
         data={CONF_USERNAME: "me@example.com", CONF_PASSWORD: "secret"},
     )
     entry.add_to_hass(hass)
-    with patch(f"{CLIENT}.async_get_titles", return_value=TITLES):
+    with (
+        patch(f"{CLIENT}.async_get_titles", return_value=TITLES),
+        patch(f"{CLIENT}.async_get_box_set_children", return_value=BOX_SETS),
+    ):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
     return entry
@@ -98,7 +115,7 @@ async def _setup(hass: HomeAssistant) -> MockConfigEntry:
 async def test_sensors_and_catalog_issue(hass: HomeAssistant) -> None:
     """Counts are exposed; a missing export raises a repair issue."""
     entry = await _setup(hass)
-    assert hass.states.get("sensor.my_movies_me_example_com_titles").state == "3"
+    assert hass.states.get("sensor.my_movies_me_example_com_titles").state == "4"
     assert hass.states.get("sensor.my_movies_me_example_com_watched_titles").state == "1"
     issue = ir.async_get(hass).async_get_issue(DOMAIN, f"catalog_{entry.entry_id}")
     assert issue is not None and issue.translation_key == "catalog_missing"
@@ -113,6 +130,7 @@ async def test_services(hass: HomeAssistant) -> None:
     with (
         patch.object(client, "async_mark_watched", AsyncMock()) as mark,
         patch(f"{CLIENT}.async_get_titles", return_value=TITLES),
+        patch(f"{CLIENT}.async_get_box_set_children", return_value=BOX_SETS),
     ):
         await hass.services.async_call(
             DOMAIN, "mark_watched", {"title": "sín city"}, blocking=True
@@ -133,23 +151,30 @@ async def test_services(hass: HomeAssistant) -> None:
     assert first["title"] == "Sin City" and first["imdb"] == "tt0401792"
 
 
-async def test_film_wall(hass: HomeAssistant) -> None:
-    """The media source lists the titles sorted, with covers and watched marks."""
-    from homeassistant.components import media_source
-    from homeassistant.setup import async_setup_component
 
-    assert await async_setup_component(hass, "media_source", {})
+async def test_panel_and_websocket(hass: HomeAssistant, hass_ws_client) -> None:
+    """The panel is registered and gets titles with details, box sets and covers."""
     entry = await _setup(hass)
-    entry.runtime_data.store.catalog = CATALOG
-    entry.runtime_data.store.posters = {"tt0401792": "/sincity.jpg"}
+    assert "mymovies" in hass.data["frontend_panels"]
+    store = entry.runtime_data.store
+    store.catalog = CATALOG
+    store.posters = {"tt0401792": "/sincity.jpg"}
+    store.children = {"child-2": {"poster": "/reloaded.jpg", "overview": "Neo revient."}}
 
-    wall = await media_source.async_browse_media(hass, f"media-source://{DOMAIN}")
-    names = [child.title for child in wall.children]
-    assert names == ["Avatar (2009)", "✓ Avatar (2009)", "Sin City (2005)"] or names == [
-        "✓ Avatar (2009)",
-        "Avatar (2009)",
-        "Sin City (2005)",
-    ]
-    sin_city = wall.children[-1]
-    assert sin_city.thumbnail == "https://image.tmdb.org/t/p/w342/sincity.jpg"
-    assert wall.children[0].thumbnail.startswith("/api/mymovies/thumbnail/")
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id({"type": "mymovies/collection"})
+    msg = await client.receive_json()
+    assert msg["success"]
+    titles = {t["collection_number"]: t for t in msg["result"]["titles"]}
+    assert titles[1]["poster"] == "https://image.tmdb.org/t/p/w342/sincity.jpg"
+    # No TMDB poster: signed My Movies thumbnail.
+    assert titles[2]["poster"].startswith("/api/mymovies/thumbnail/") and "authSig=" in titles[2]["poster"]
+    # Box set without collection poster: its first film with a TMDB poster.
+    box = titles[4]
+    assert box["poster"] == "https://image.tmdb.org/t/p/w342/reloaded.jpg"
+    assert [c["title"] for c in box["children"]] == ["Matrix", "Matrix Reloaded"]
+    assert box["children"][0]["poster"] == "https://cdn/1.jpg"
+    assert box["children"][1]["description"] == "Neo revient."
+
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    assert "mymovies" not in hass.data["frontend_panels"]

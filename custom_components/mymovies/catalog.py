@@ -1,15 +1,16 @@
-"""Titles and IMDb IDs that the credentials-only API does not provide.
+"""Titles and details that the credentials-only API does not provide.
 
-The My Movies API only exposes catalog data (names, IMDb IDs) to the official
-apps. The integration therefore imports the collection export of the My Movies
-app (CSV) and joins it to the API by collection number. TMDB poster paths found
-by IMDb ID are cached next to it.
+The My Movies API only exposes catalog data (names, IMDb IDs, synopsis...) to
+the official apps. The integration therefore imports the collection export of
+the My Movies app (CSV) and joins it to the API by collection number. TMDB
+lookups (posters by IMDb ID, box-set films by title) are cached next to it.
 """
 
 from __future__ import annotations
 
 import csv
-from dataclasses import asdict, dataclass
+import re
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from homeassistant.core import HomeAssistant
@@ -19,6 +20,7 @@ from .const import DOMAIN, STORAGE_VERSION
 
 REQUIRED_COLUMNS = {"Collection Number", "Title", "IMDB Id"}
 NO_IMDB = "tt0000000"  # what the export holds for box sets
+MAX_ACTORS = 8
 
 
 class InvalidExportError(Exception):
@@ -34,6 +36,40 @@ class CatalogEntry:
     sort_title: str
     imdb: str | None
     year: int | None
+    runtime: int | None = None  # minutes
+    rating: float | None = None
+    personal_rating: float | None = None
+    parental_rating: str = ""
+    release_date: str = ""  # YYYY-MM-DD
+    added: str = ""  # YYYY-MM-DD
+    disc_type: str = ""
+    media_type: str = ""
+    group: str = ""
+    edition: str = ""
+    genres: list[str] = field(default_factory=list)
+    director: str = ""
+    actors: list[str] = field(default_factory=list)
+    description: str = ""
+
+
+def _minutes(value: str) -> int | None:
+    """'1:58' -> 118."""
+    hours, _, minutes = value.partition(":")
+    if hours.isdigit() and minutes.isdigit():
+        return int(hours) * 60 + int(minutes)
+    return None
+
+
+def _number(value: str) -> float | None:
+    try:
+        return float(value.replace(",", "."))
+    except ValueError:
+        return None
+
+
+def _names(value: str, limit: int | None = None) -> list[str]:
+    names = [part.strip() for part in value.split(",") if part.strip()]
+    return names[:limit] if limit else names
 
 
 def parse_export(path: Path) -> dict[int, CatalogEntry]:
@@ -48,18 +84,37 @@ def parse_export(path: Path) -> dict[int, CatalogEntry]:
             raise InvalidExportError(f"missing columns: {sorted(missing)}")
         catalog: dict[int, CatalogEntry] = {}
         for row in reader:
-            number = (row.get("Collection Number") or "").strip()
+            col = {k: (v or "").strip() for k, v in row.items() if k}
+            number = col.get("Collection Number", "")
             if not number.isdigit():
                 continue
-            title = (row.get("Title") or "").strip()
-            imdb = (row.get("IMDB Id") or "").strip()
-            year = (row.get("Production Year") or "").strip()
+            title = col.get("Title", "")
+            imdb = col.get("IMDB Id", "")
+            year = col.get("Production Year", "")
+            # The description holds one text per language, separated by "; ;".
+            description = col.get("Description", "").split("; ;")[0].strip(" ;")
+            # Paragraphs are separated by ";" after the end of a sentence.
+            description = re.sub(r"([.!?…»])\s*;\s*", "\\1\n", description)
             catalog[int(number)] = CatalogEntry(
                 title=title,
-                original_title=(row.get("Original Title") or "").strip() or title,
-                sort_title=(row.get("Sort Title") or "").strip() or title,
+                original_title=col.get("Original Title") or title,
+                sort_title=col.get("Sort Title") or title,
                 imdb=imdb if imdb.startswith("tt") and imdb != NO_IMDB else None,
                 year=int(year) if year.isdigit() else None,
+                runtime=_minutes(col.get("Running Time", "")),
+                rating=_number(col.get("Rating", "")),
+                personal_rating=_number(col.get("Personal Rating", "")),
+                parental_rating=col.get("Par. Rating", ""),
+                release_date=col.get("Release Date", ""),
+                added=col.get("Added Date", ""),
+                disc_type=col.get("Disc Type", ""),
+                media_type=col.get("Media Type", ""),
+                group=col.get("Group", ""),
+                edition=col.get("Edition", ""),
+                genres=_names(col.get("Genres", "")),
+                director=col.get("Director", ""),
+                actors=_names(col.get("Actors", ""), MAX_ACTORS),
+                description="" if description == "-" else description,
             )
     if not catalog:
         raise InvalidExportError("no titles in the file")
@@ -67,23 +122,29 @@ def parse_export(path: Path) -> dict[int, CatalogEntry]:
 
 
 class CatalogStore:
-    """Persist the imported catalog and the TMDB poster cache of one account."""
+    """Persist the imported catalog and the TMDB lookups of one account."""
 
     def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
         self._store: Store[dict] = Store(hass, STORAGE_VERSION, f"{DOMAIN}.{entry_id}")
         self.catalog: dict[int, CatalogEntry] = {}
         self.posters: dict[str, str] = {}  # IMDb ID -> TMDB poster path ("" = none)
+        self.children: dict[str, dict[str, str]] = {}  # box-set film ID -> poster, overview
+        self.box_posters: dict[str, str] = {}  # lower-case title ID without IMDb -> poster path
 
     async def async_load(self) -> None:
         data = await self._store.async_load() or {}
         self.catalog = {int(k): CatalogEntry(**v) for k, v in data.get("catalog", {}).items()}
         self.posters = data.get("posters", {})
+        self.children = data.get("children", {})
+        self.box_posters = data.get("box_posters", {})
 
     async def async_save(self) -> None:
         await self._store.async_save(
             {
                 "catalog": {str(k): asdict(v) for k, v in self.catalog.items()},
                 "posters": self.posters,
+                "children": self.children,
+                "box_posters": self.box_posters,
             }
         )
 
