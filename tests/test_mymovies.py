@@ -452,3 +452,27 @@ async def test_offline_from_export(hass: HomeAssistant) -> None:
     with patch(f"{CLIENT}.async_get_titles", side_effect=refused):
         await coordinator.async_refresh()
     assert not coordinator.last_update_success
+
+
+def test_box_sets_from_sort_titles() -> None:
+    """Discs are found under their box set's sort title, whatever its case or article."""
+    from custom_components.mymovies.catalog import link_box_sets
+
+    def entry(title, sort, imdb=None):
+        return CatalogEntry(title, title, sort, imdb, None)
+
+    catalog = {
+        23: entry("The Matrix Trilogy", "Matrix Trilogy, The"),
+        25: entry("The Matrix", "Matrix Trilogy, The 01: The Matrix", "tt0133093"),
+        24: entry("The Matrix Revolutions", "Matrix Trilogy, The 03: The Matrix Revolutions", "tt0242653"),
+        43: entry("Retour vers le futur : Trilogie", "Retour vers le futur : Trilogie"),
+        45: entry("Retour vers le futur", "Retour vers Le Futur: Trilogie 01: Retour vers le futur 01", "tt0088763"),
+        138: entry("Sans un Bruit", "Quiet Place Collection, A"),
+        139: entry("Sans un Bruit", "Quiet Place Collection 01: Sans un Bruit, A", "tt6644200"),
+        42: entry("Sin City 2", "Sin City 02: J'ai tue pour elle", "tt0458481"),  # saga order, no box set
+    }
+    link_box_sets(catalog)
+    assert (catalog[25].box, catalog[25].box_order) == (23, 1)
+    assert (catalog[24].box, catalog[24].box_order) == (23, 3)
+    assert catalog[45].box == 43 and catalog[139].box == 138
+    assert catalog[42].box is None and catalog[23].box is None

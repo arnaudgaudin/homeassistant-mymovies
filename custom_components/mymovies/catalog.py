@@ -54,6 +54,8 @@ class CatalogEntry:
     actors: list[str] = field(default_factory=list)
     description: str = ""
     watched: bool = False
+    box: int | None = None  # collection number of the box set this disc belongs to
+    box_order: int | None = None  # position of the disc in its box set
 
 
 def normalize_title(text: str | None) -> str:
@@ -130,7 +132,35 @@ def parse_export(path: Path) -> dict[int, CatalogEntry]:
             )
     if not catalog:
         raise InvalidExportError("no titles in the file")
+    link_box_sets(catalog)
     return catalog
+
+
+_SORT_DISC = re.compile(r"^(.*?) (\d+): ")
+_TRAILING_ARTICLE = re.compile(r",\s*(the|a|an|le|la|les|l')$")
+
+
+def _sort_key(text: str) -> str:
+    """'Quiet Place Collection, A' and 'Retour vers Le Futur: Trilogie' compare as written."""
+    key = _TRAILING_ARTICLE.sub("", normalize_title(text))
+    key = re.sub(r"\s*:\s*", ": ", key)
+    return re.sub(r"\s+", " ", key).strip()
+
+
+def link_box_sets(catalog: dict[int, CatalogEntry]) -> None:
+    """Find the discs of each box set from the export's sort titles.
+
+    My Movies sorts the discs of a box set under the box set's sort title followed
+    by their position: "Matrix Trilogy, The" holds "Matrix Trilogy, The 01: The
+    Matrix", "Matrix Trilogy, The 02: ...". Box sets have no IMDb ID.
+    """
+    boxes = {_sort_key(e.sort_title): number for number, e in catalog.items() if e.imdb is None}
+    for number, entry in catalog.items():
+        entry.box = entry.box_order = None
+        if match := _SORT_DISC.match(entry.sort_title):
+            box = boxes.get(_sort_key(match.group(1)))
+            if box is not None and box != number:
+                entry.box, entry.box_order = box, int(match.group(2))
 
 
 def read_uploaded_export(hass: HomeAssistant, file_id: str) -> dict[int, CatalogEntry]:
