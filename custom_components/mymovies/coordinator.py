@@ -134,12 +134,71 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
                 covers_changed="",
             )
         data = MyMoviesData(titles=titles, box_sets={})
+        self._offline_box_sets(data)
         self._update_catalog_issue(data)
         if self._tmdb_missing(data):
             self.config_entry.async_create_background_task(
                 self.hass, self.async_fetch_tmdb(data), f"{DOMAIN}_tmdb_{self.config_entry.entry_id}"
             )
         return data
+
+    def _offline_box_sets(self, data: MyMoviesData) -> None:
+        """Box sets from the export (discs owned as titles), else from TMDB collections."""
+        by_number = {t.collection_number: t for t in data.titles.values()}
+        discs = sorted(
+            (e.box_order or 0, number, e) for number, e in self.store.catalog.items() if e.box in by_number
+        )
+        for _, number, entry in discs:
+            box_key = by_number[entry.box].id.lower()
+            disc = by_number[number]
+            data.box_sets.setdefault(box_key, []).append(
+                BoxSetChild(
+                    id=disc.id,
+                    parent_id=box_key,
+                    title=entry.title,
+                    original_title=entry.original_title,
+                    year=entry.year,
+                    edition=entry.edition,
+                    disc_type=entry.disc_type,
+                    thumbnail="",
+                )
+            )
+            data.child_titles[disc.id.lower()] = disc.id.lower()
+            data.box_of[disc.id.lower()] = box_key
+        for key, title in data.titles.items():
+            entry = self.entry_for(title)
+            parts = (self.store.covers.get(key) or {}).get("parts") or []
+            if key in data.box_sets or not entry or entry.imdb or not parts:
+                continue
+            # Only the films released before the box set (a later sequel is not in it).
+            films = [
+                p for p in parts if p["year"] and (not entry.release_date or p["release_date"] <= entry.release_date)
+            ]
+            for part in films:
+                child_key = f"00000000-0000-0000-0001-{part['id']:012d}"
+                self.store.covers.setdefault(
+                    child_key,
+                    {
+                        "kind": "movie",
+                        "id": part["id"],
+                        "path": part["poster"] or None,
+                        "width": 0,
+                        "height": 0,
+                        "overview": part["overview"],
+                    },
+                )
+                data.box_sets.setdefault(key, []).append(
+                    BoxSetChild(
+                        id=child_key,
+                        parent_id=key,
+                        title=part["title"],
+                        original_title=part["original_title"],
+                        year=part["year"],
+                        edition="",
+                        disc_type=entry.disc_type,
+                        thumbnail="",
+                    )
+                )
 
     async def _async_complete_box_sets(
         self, titles: dict[str, CollectionTitle], box_sets: dict[str, list[BoxSetChild]]
@@ -266,7 +325,11 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
         todo: list[tuple[str, CollectionTitle | BoxSetChild]] = [
             (key, title)
             for key, title in data.titles.items()
-            if key not in self.store.covers and self.entry_for(title)
+            if self.entry_for(title)
+            and (
+                key not in self.store.covers
+                or (self.store.covers[key].get("kind") == "collection" and "parts" not in self.store.covers[key])
+            )
         ]
         todo += [
             (child.id.lower(), child)
@@ -278,6 +341,11 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
 
     def _tmdb_missing(self, data: MyMoviesData) -> bool:
         return bool(self.config_entry.options.get(CONF_TMDB_API_KEY)) and bool(self._tmdb_todo(data))
+
+    @staticmethod
+    def _looks_like_box_set(entry: CatalogEntry) -> bool:
+        """No IMDb ID and a box-set word in the title ("Trilogie", "Intégrale 5 Films"...)."""
+        return not entry.imdb and normalize_title(tmdb.franchise_name(entry.title)) != normalize_title(entry.title)
 
     async def _async_match(
         self,
@@ -294,7 +362,7 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
                 session, api_key, item.original_title or item.title, item.year, lang
             )
         entry = self.entry_for(item)
-        if key in data.box_sets:
+        if key in data.box_sets or self._looks_like_box_set(entry):
             return await tmdb.async_search_collection(session, api_key, entry.title, lang)
         if entry.imdb:
             match = await tmdb.async_find_imdb(session, api_key, entry.imdb, lang)
@@ -322,6 +390,8 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
                 found: dict[str, Any] = {}
                 if match:
                     found = {"kind": match.kind, "id": match.id, "season": match.season, "overview": match.overview}
+                    if match.kind == "collection":
+                        found["parts"] = await tmdb.async_collection_parts(session, api_key, match.id, lang)
                     posters = await tmdb.async_posters(session, api_key, match, lang)
                     if best := tmdb.best_poster(posters, lang):
                         found.update(
@@ -338,7 +408,11 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             self._fetching = False
             if done:
                 await self.store.async_save()
-                self.async_update_listeners()
+                if self.offline:
+                    # Box sets without discs get their films from the TMDB collections.
+                    self.async_set_updated_data(self._offline_data())
+                else:
+                    self.async_update_listeners()
 
     def entry_for(self, title: CollectionTitle) -> CatalogEntry | None:
         """Catalog data of a title, when the export knows it."""

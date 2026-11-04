@@ -127,6 +127,28 @@ async def async_search_collection(
     return TmdbMatch("collection", best["id"], best.get("overview") or "")
 
 
+async def async_collection_parts(
+    session: aiohttp.ClientSession, api_key: str, collection_id: int, language: str
+) -> list[dict[str, Any]]:
+    """Films of a TMDB collection, oldest first."""
+    data = await _get(session, f"/collection/{collection_id}", {"api_key": api_key, "language": language})
+    parts = []
+    for part in data.get("parts") or []:
+        date = part.get("release_date") or ""
+        parts.append(
+            {
+                "id": part["id"],
+                "title": part.get("title") or "",
+                "original_title": part.get("original_title") or "",
+                "release_date": date,
+                "year": int(date[:4]) if date[:4].isdigit() else None,
+                "poster": part.get("poster_path") or "",
+                "overview": part.get("overview") or "",
+            }
+        )
+    return sorted(parts, key=lambda p: p["release_date"] or "9999")
+
+
 async def async_posters(
     session: aiohttp.ClientSession, api_key: str, match: TmdbMatch, language: str
 ) -> list[dict[str, Any]]:

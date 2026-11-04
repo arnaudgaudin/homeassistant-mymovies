@@ -476,3 +476,39 @@ def test_box_sets_from_sort_titles() -> None:
     assert (catalog[24].box, catalog[24].box_order) == (23, 3)
     assert catalog[45].box == 43 and catalog[139].box == 138
     assert catalog[42].box is None and catalog[23].box is None
+
+
+async def test_offline_box_sets(hass: HomeAssistant) -> None:
+    """Offline, box sets come from the export, or from TMDB collections up to their release."""
+    from custom_components.mymovies.catalog import link_box_sets
+
+    entry = await _setup(hass)
+    coordinator = entry.runtime_data
+    catalog = {
+        23: CatalogEntry("The Matrix Trilogy", "The Matrix Trilogy", "Matrix Trilogy, The", None, None),
+        25: CatalogEntry("The Matrix", "The Matrix", "Matrix Trilogy, The 01: The Matrix", "tt0133093", 1999),
+        26: CatalogEntry("The Matrix Reloaded", "The Matrix Reloaded", "Matrix Trilogy, The 02: Reloaded", "tt0234215", 2003, watched=True),
+        183: CatalogEntry("Jurassic World : Trilogie", "Jurassic World: Trilogy", "Jurassic World : Trilogie", None, None, release_date="2025-06-24"),
+    }
+    link_box_sets(catalog)
+    coordinator.store.catalog = catalog
+    box_key = "00000000-0000-0000-0000-000000000183"
+    coordinator.store.covers[box_key] = {
+        "kind": "collection",
+        "id": 328,
+        "parts": [
+            {"id": 135397, "title": "Jurassic World", "original_title": "Jurassic World", "release_date": "2015-06-10", "year": 2015, "poster": "/jw.jpg", "overview": ""},
+            {"id": 351286, "title": "Fallen Kingdom", "original_title": "Fallen Kingdom", "release_date": "2018-06-06", "year": 2018, "poster": "/fk.jpg", "overview": ""},
+            {"id": 1234821, "title": "Rebirth", "original_title": "Rebirth", "release_date": "2025-07-02", "year": 2025, "poster": "/rb.jpg", "overview": ""},
+        ],
+    }
+    with patch(f"{CLIENT}.async_get_titles", side_effect=MyMoviesAuthError("refused")):
+        await coordinator.async_refresh()
+    data = coordinator.data
+    matrix = data.box_sets["00000000-0000-0000-0000-000000000023"]
+    assert [c.title for c in matrix] == ["The Matrix", "The Matrix Reloaded"]
+    reloaded = "00000000-0000-0000-0000-000000000026"
+    assert data.box_of[reloaded] == "00000000-0000-0000-0000-000000000023"
+    assert coordinator.describe_child(matrix[1])["watched"] is True
+    assert [c.title for c in data.box_sets[box_key]] == ["Jurassic World", "Fallen Kingdom"]  # no Rebirth
+    assert coordinator.describe_child(data.box_sets[box_key][0])["poster"] == "https://image.tmdb.org/t/p/w342/jw.jpg"
