@@ -24,6 +24,7 @@ const STRINGS = {
     creditCollection: "Collection data", creditCovers: "Covers",
     tmdbNotice: "This product uses the TMDB API but is not endorsed or certified by TMDB.",
     unofficial: "Unofficial integration, not affiliated with or endorsed by My Movies.",
+    years: "Years",
     allAges: "Any age", allAudiences: "All audiences", forAge: "For a {n}-year-old",
     editions: "editions", editionsTitle: "Editions in the collection",
     changeCover: "Change cover", coverTitle: "Choose the cover", coverAuto: "Automatic (best resolution)",
@@ -59,6 +60,7 @@ const STRINGS = {
     creditCollection: "Données de la collection", creditCovers: "Jaquettes",
     tmdbNotice: "Ce produit utilise l'API TMDB mais n'est ni approuvé ni certifié par TMDB.",
     unofficial: "Intégration non officielle, ni affiliée à My Movies ni approuvée par My Movies.",
+    years: "Années",
     allAges: "Tous les âges", allAudiences: "Tout public", forAge: "Pour un enfant de {n} ans",
     editions: "éditions", editionsTitle: "Éditions dans la collection",
     changeCover: "Changer la jaquette", coverTitle: "Choisir la jaquette", coverAuto: "Automatique (meilleure résolution)",
@@ -139,7 +141,7 @@ const norm = (value) =>
   String(value ?? "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
 function loadState() {
-  const defaults = { sort: "title", dir: "asc", type: "all", genre: "all", age: "all", disc: "all", watched: "all", expand: false, view: "grid", q: "" };
+  const defaults = { sort: "title", dir: "asc", type: "all", genre: "all", age: "all", yearFrom: null, yearTo: null, disc: "all", watched: "all", expand: false, view: "grid", q: "" };
   try {
     return { ...defaults, ...JSON.parse(localStorage.getItem(STATE_KEY) || "{}"), q: "" };
   } catch (err) {
@@ -200,6 +202,7 @@ class MyMoviesPanel extends HTMLElement {
     }
     this._renderDiscOptions();
     this._renderGenreOptions();
+    this._renderYears();
     this._renderGrid();
     if (this._dialog?.kind === "title") this._renderDialog(false);
   }
@@ -218,6 +221,35 @@ class MyMoviesPanel extends HTMLElement {
     select.innerHTML = ["all", ...genres]
       .map((g) => `<option value="${esc(g)}" ${this._state.genre === g ? "selected" : ""}>${esc(g === "all" ? this._t.allGenres : this._genre(g))}</option>`)
       .join("");
+  }
+
+  _renderYears() {
+    // The range goes from the oldest to the newest production year of the collection.
+    const years = (this._titles || []).flatMap((t) => [t.year, ...(t.children || []).map((c) => c.year)]).filter(Boolean);
+    if (!years.length) return;
+    const lo = Math.min(...years);
+    const hi = Math.max(...years);
+    this._yearBounds = [lo, hi];
+    const clamp = (y, fallback) => (y == null ? fallback : Math.min(hi, Math.max(lo, y)));
+    const from = clamp(this._state.yearFrom, lo);
+    const to = clamp(this._state.yearTo, hi);
+    for (const [id, value] of [["year-from", from], ["year-to", to]]) {
+      const input = this.shadowRoot.getElementById(id);
+      input.min = lo;
+      input.max = hi;
+      input.step = 1;
+      input.value = value;
+    }
+    this._paintYears(from, to);
+  }
+
+  _paintYears(from, to) {
+    const [lo, hi] = this._yearBounds || [from, to];
+    const span = hi - lo || 1;
+    const fill = this.shadowRoot.getElementById("years-fill");
+    fill.style.left = `${((from - lo) / span) * 100}%`;
+    fill.style.right = `${((hi - to) / span) * 100}%`;
+    this.shadowRoot.getElementById("years-label").textContent = from === to ? `${from}` : `${from} – ${to}`;
   }
 
   _renderDiscOptions() {
@@ -297,6 +329,9 @@ class MyMoviesPanel extends HTMLElement {
     const items = this._allItems().filter((i) => {
       if (st.type !== "all" && i.media_type !== TYPES[st.type]) return false;
       if (st.genre !== "all" && !(i.genres || []).some((g) => canonGenre(g) === st.genre)) return false;
+      if (st.yearFrom != null || st.yearTo != null) {
+        if (!i.year || (st.yearFrom != null && i.year < st.yearFrom) || (st.yearTo != null && i.year > st.yearTo)) return false;
+      }
       if (st.age !== "all") {
         const age = minimumAge(i.parental_rating);
         if (age == null || age > Number(st.age)) return false;
@@ -406,6 +441,15 @@ class MyMoviesPanel extends HTMLElement {
           ${option("all", t.allAges, st.age)}${option("0", t.allAudiences, st.age)}
           ${AGES.slice(1).map((n) => option(n, t.forAge.replace("{n}", n), st.age)).join("")}
         </select></span>
+        <div class="years" id="years" title="${esc(t.years)}">
+          <span class="seg-label">${esc(t.years)}</span>
+          <span class="years-label" id="years-label"></span>
+          <div class="range">
+            <span class="track"></span><span class="fill" id="years-fill"></span>
+            <input type="range" id="year-from" aria-label="${esc(t.years)} min" />
+            <input type="range" id="year-to" aria-label="${esc(t.years)} max" />
+          </div>
+        </div>
         <span class="select"><select id="disc" aria-label="${esc(t.allDiscs)}">${option("all", t.allDiscs, "all")}</select></span>
         <div class="segmented" id="watched" role="radiogroup" aria-label="${esc(t.watchedFilter)}">
           ${seg("watched", "watched", esc(t.segWatched), st.watched)}${seg("watched", "all", esc(t.segAll), st.watched)}${seg("watched", "unwatched", esc(t.segUnwatched), st.watched)}
@@ -452,6 +496,21 @@ class MyMoviesPanel extends HTMLElement {
     $("disc").addEventListener("change", (ev) => update({ disc: ev.target.value }));
     $("genre").addEventListener("change", (ev) => update({ genre: ev.target.value }));
     $("age").addEventListener("change", (ev) => update({ age: ev.target.value }));
+    const onYears = (moved) => {
+      const [lo, hi] = this._yearBounds || [0, 0];
+      let from = Number($("year-from").value);
+      let to = Number($("year-to").value);
+      if (from > to) {
+        if (moved === "from") to = from;
+        else from = to;
+        $("year-from").value = from;
+        $("year-to").value = to;
+      }
+      this._paintYears(from, to);
+      update({ yearFrom: from > lo ? from : null, yearTo: to < hi ? to : null });
+    };
+    $("year-from").addEventListener("input", () => onYears("from"));
+    $("year-to").addEventListener("input", () => onYears("to"));
     segmented("watched", "watched");
     segmented("view", "view");
     segmented("expand", "expand", (value) => value === "expanded");
@@ -846,6 +905,17 @@ const STYLE = `
   .segmented { display: inline-flex; flex: none; padding: 2px; border-radius: 10px; border: 1px solid var(--divider-color); background: var(--card-background-color); }
   .segmented button { height: 30px; padding: 0 12px; border: none; border-radius: 8px; background: transparent; cursor: pointer; font-size: 13px; white-space: nowrap; color: var(--secondary-text-color); transition: background 0.15s, color 0.15s; }
   .segmented button.active { background: var(--primary-color); color: var(--text-primary-color, #fff); }
+  .years { display: inline-flex; align-items: center; gap: 6px; flex: 0 1 320px; min-width: 240px; height: 36px; padding: 0 12px 0 2px; border: 1px solid var(--divider-color); border-radius: 10px; background: var(--card-background-color); box-sizing: border-box; }
+  .years-label { min-width: 84px; font-size: 13px; text-align: center; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .range { position: relative; flex: 1; height: 20px; min-width: 80px; }
+  .range .track, .range .fill { position: absolute; top: 50%; height: 4px; margin-top: -2px; border-radius: 2px; }
+  .range .track { left: 0; right: 0; background: var(--divider-color); }
+  .range .fill { background: var(--primary-color); }
+  .range input { position: absolute; inset: 0; width: 100%; height: 20px; margin: 0; background: none; pointer-events: none; -webkit-appearance: none; appearance: none; }
+  .range input::-webkit-slider-runnable-track { height: 20px; background: transparent; }
+  .range input::-moz-range-track { background: transparent; }
+  .range input::-webkit-slider-thumb { -webkit-appearance: none; pointer-events: auto; width: 16px; height: 16px; margin-top: 2px; border-radius: 50%; background: var(--primary-color); border: 2px solid var(--card-background-color); cursor: pointer; }
+  .range input::-moz-range-thumb { pointer-events: auto; width: 14px; height: 14px; border-radius: 50%; background: var(--primary-color); border: 2px solid var(--card-background-color); cursor: pointer; }
   .seg-label { align-self: center; padding: 0 8px 0 10px; font-size: 13px; color: var(--secondary-text-color); white-space: nowrap; }
   .segmented.icons { margin-left: auto; }
   .segmented.icons button { width: 36px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }

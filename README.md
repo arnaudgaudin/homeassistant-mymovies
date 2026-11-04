@@ -93,7 +93,8 @@ of covers and offers:
   ascending or descending;
 - a wall of covers or a list with more details per title;
 - search (title, original title, director, cast) and filters: type, genre, age
-  (titles allowed for a 6, 10, 12 or 16-year-old), disc (4K, Blu-ray, DVD, 3D)
+  (titles allowed for a 6, 10, 12 or 16-year-old), disc (4K, Blu-ray, DVD, 3D),
+  a production year range with two handles
   and a Watched / All / Not watched switch;
 - editions of the same film (same IMDb ID) share one tile; its dialog lists them;
 - a ✓ badge on watched titles, including films inside box sets;
