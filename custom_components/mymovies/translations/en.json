@@ -64,6 +64,7 @@
     "title_ambiguous": { "message": "Several titles match \"{title}\": {numbers}. Use the collection number or the title ID." },
     "no_entry": { "message": "No My Movies account is loaded." },
     "several_entries": { "message": "Several My Movies accounts are loaded; set config_entry_id." },
+    "offline": { "message": "My Movies no longer gives access to its API: the watched state cannot be changed from Home Assistant for now." },
     "api_error": { "message": "My Movies rejected the request: {error}" }
   },
   "services": {

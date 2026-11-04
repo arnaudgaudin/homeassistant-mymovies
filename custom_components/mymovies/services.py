@@ -111,6 +111,8 @@ def async_setup_services(hass: HomeAssistant) -> None:
 
     async def _write(call: ServiceCall, mark: bool) -> None:
         entry = _get_entry(hass, call)
+        if entry.runtime_data.offline:
+            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="offline")
         title = _resolve(entry, call.data[ATTR_TITLE])
         client = entry.runtime_data.client
         try:

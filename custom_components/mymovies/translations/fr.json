@@ -64,6 +64,7 @@
     "title_ambiguous": { "message": "Plusieurs titres correspondent à « {title} » : {numbers}. Utilisez le numéro de collection ou l'ID du titre." },
     "no_entry": { "message": "Aucun compte My Movies n'est chargé." },
     "several_entries": { "message": "Plusieurs comptes My Movies sont chargés ; précisez config_entry_id." },
+    "offline": { "message": "My Movies ne donne plus accès à son API : le statut « vu » ne peut pas être modifié depuis Home Assistant pour l'instant." },
     "api_error": { "message": "My Movies a refusé la requête : {error}" }
   },
   "services": {

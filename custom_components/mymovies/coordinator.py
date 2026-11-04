@@ -87,6 +87,8 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
         self._box_set_cache: dict[str, list[BoxSetChild]] = {}
         self._children_watched: dict[str, bool] = {}
         self._children_checked: datetime | None = None
+        # True when My Movies refuses its API: the collection comes from the export only.
+        self.offline = False
 
     async def _async_update_data(self) -> MyMoviesData:
         try:
@@ -94,15 +96,44 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
                 self.client.async_get_titles(), self.client.async_get_box_set_children()
             )
         except MyMoviesAuthError as err:
-            raise ConfigEntryAuthFailed(str(err)) from err
+            if not self.store.catalog:
+                raise ConfigEntryAuthFailed(str(err)) from err
+            # My Movies closed its API to third-party apps: keep working from the export.
+            if not self.offline:
+                _LOGGER.warning("My Movies refuses API access (%s): using the imported export", err)
+            return self._offline_data()
         except MyMoviesError as err:
             raise UpdateFailed(str(err)) from err
+        self.offline = False
         by_id = {t.id.lower(): t for t in titles}
         await self._async_complete_box_sets(by_id, box_sets)
         data = MyMoviesData(titles=by_id, box_sets=box_sets)
         self._link_box_set_discs(data)
         await self._async_update_children_watched(data)
         data.children_watched = dict(self._children_watched)
+        self._update_catalog_issue(data)
+        if self._tmdb_missing(data):
+            self.config_entry.async_create_background_task(
+                self.hass, self.async_fetch_tmdb(data), f"{DOMAIN}_tmdb_{self.config_entry.entry_id}"
+            )
+        return data
+
+    def _offline_data(self) -> MyMoviesData:
+        """The collection as imported from the export, with a stable ID per title."""
+        self.offline = True
+        titles = {}
+        for number, entry in self.store.catalog.items():
+            title_id = f"00000000-0000-0000-0000-{number:012d}"
+            titles[title_id] = CollectionTitle(
+                id=title_id,
+                collection_number=number,
+                watched=entry.watched,
+                group=entry.group,
+                added=entry.added,
+                data_changed="",
+                covers_changed="",
+            )
+        data = MyMoviesData(titles=titles, box_sets={})
         self._update_catalog_issue(data)
         if self._tmdb_missing(data):
             self.config_entry.async_create_background_task(
@@ -335,6 +366,8 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
 
     def mymovies_cover(self, key: str) -> dict[str, Any] | None:
         """The My Movies cover of a title (API thumbnail) or box-set film (catalog cover)."""
+        if self.offline:
+            return None  # the thumbnails came from the API
         if self.data and key in self.data.titles:
             return {
                 "source": "mymovies",

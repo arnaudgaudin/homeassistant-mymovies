@@ -423,3 +423,32 @@ async def test_cover_choice(hass: HomeAssistant, hass_ws_client) -> None:
     assert (await client.receive_json())["success"]
     assert not path.exists()  # the uploaded file is removed with the choice
     assert entry.runtime_data.cover(key)["source"] == "mymovies"
+
+
+async def test_offline_from_export(hass: HomeAssistant) -> None:
+    """When My Movies refuses its API, the collection comes from the imported export."""
+    from homeassistant.exceptions import HomeAssistantError
+
+    entry = await _setup(hass)
+    coordinator = entry.runtime_data
+    coordinator.store.catalog = {
+        **CATALOG,
+        5: CatalogEntry("Up", "Up", "Up", "tt1049413", 2009, watched=True),
+    }
+    refused = MyMoviesAuthError("GetTitlesInCollection: credentials rejected")
+    with patch(f"{CLIENT}.async_get_titles", side_effect=refused):
+        await coordinator.async_refresh()
+    assert coordinator.last_update_success and coordinator.offline
+    titles = {t.collection_number: t for t in coordinator.data.titles.values()}
+    assert sorted(titles) == [1, 2, 3, 4, 5] and titles[5].watched
+    assert coordinator.data.box_sets == {}
+    assert coordinator.mymovies_cover(titles[1].id.lower()) is None
+    with pytest.raises(HomeAssistantError) as err:
+        await hass.services.async_call(DOMAIN, "mark_watched", {"title": "Up"}, blocking=True)
+    assert err.value.translation_key == "offline"
+
+    # Without any export, refusals still ask to sign in again.
+    coordinator.store.catalog = {}
+    with patch(f"{CLIENT}.async_get_titles", side_effect=refused):
+        await coordinator.async_refresh()
+    assert not coordinator.last_update_success

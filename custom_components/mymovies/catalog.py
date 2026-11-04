@@ -53,6 +53,7 @@ class CatalogEntry:
     director: str = ""
     actors: list[str] = field(default_factory=list)
     description: str = ""
+    watched: bool = False
 
 
 def normalize_title(text: str | None) -> str:
@@ -125,6 +126,7 @@ def parse_export(path: Path) -> dict[int, CatalogEntry]:
                 director=col.get("Director", ""),
                 actors=_names(col.get("Actors", ""), MAX_ACTORS),
                 description="" if description == "-" else description,
+                watched=col.get("Watched", "").lower() == "yes",
             )
     if not catalog:
         raise InvalidExportError("no titles in the file")
