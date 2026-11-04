@@ -93,6 +93,20 @@ def franchise_name(title: str) -> str:
     return re.sub(r"\s+", " ", name).strip(" :-–—")
 
 
+_FILM_COUNT = re.compile(r"(\d+)\s*-?\s*films?\b")
+_SERIES_WORDS = {"trilog": 3, "quadrilog": 4, "tetralog": 4}
+
+
+def box_set_size(title: str) -> int | None:
+    """Number of films a box-set title announces: "Trilogie" 3, "Intégrale 5 Films" 5."""
+    text = normalize_title(title)
+    for word, size in _SERIES_WORDS.items():
+        if word in text:
+            return size
+    match = _FILM_COUNT.search(text)
+    return int(match.group(1)) if match else None
+
+
 def _bare(name: str | None) -> str:
     """Franchise name, normalized, without "Collection", "Saga"... nor a leading article.
 

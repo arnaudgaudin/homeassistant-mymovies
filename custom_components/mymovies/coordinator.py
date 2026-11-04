@@ -181,6 +181,11 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             films = [
                 p for p in parts if p["year"] and (not entry.release_date or p["release_date"] <= entry.release_date)
             ]
+            # A premiere can predate the box set by a day (Jurassic World Rebirth): the
+            # title's film count ("Trilogie", "5 Films") keeps the oldest ones.
+            size = tmdb.box_set_size(entry.title) or tmdb.box_set_size(entry.original_title)
+            if size:
+                films = films[:size]
             for part in films:
                 child_key = f"00000000-0000-0000-0001-{part['id']:012d}"
                 self.store.covers.setdefault(

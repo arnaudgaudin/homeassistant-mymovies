@@ -324,6 +324,10 @@ def test_tmdb_rules() -> None:
     assert tmdb.season_number("Dark Angel: The Complete Second Season") == 2
     assert tmdb.season_number("Stargate SG-1 : Saison 3") == 3
     assert tmdb.season_number("Apollo 11") is None
+    assert tmdb.box_set_size("Jurassic World : Trilogie") == 3
+    assert tmdb.box_set_size("Pirates des Caraïbes - Intégrale 5 Films") == 5
+    assert tmdb.box_set_size("Harry Potter 20th Anniversary 8-Film Collection") == 8
+    assert tmdb.box_set_size("Harry Potter: L'Édition Anniversaire Collector") is None
     wanted = tmdb._bare(tmdb.franchise_name("Jurassic World : Trilogie"))
     assert tmdb._bare("Collection Jurassic World").startswith(wanted)
     assert not tmdb._bare("LEGO Jurassic World Collection").startswith(wanted)
@@ -499,7 +503,8 @@ async def test_offline_box_sets(hass: HomeAssistant) -> None:
         "parts": [
             {"id": 135397, "title": "Jurassic World", "original_title": "Jurassic World", "release_date": "2015-06-10", "year": 2015, "poster": "/jw.jpg", "overview": ""},
             {"id": 351286, "title": "Fallen Kingdom", "original_title": "Fallen Kingdom", "release_date": "2018-06-06", "year": 2018, "poster": "/fk.jpg", "overview": ""},
-            {"id": 1234821, "title": "Rebirth", "original_title": "Rebirth", "release_date": "2025-07-02", "year": 2025, "poster": "/rb.jpg", "overview": ""},
+            {"id": 507086, "title": "Dominion", "original_title": "Dominion", "release_date": "2022-06-01", "year": 2022, "poster": "/dm.jpg", "overview": ""},
+            {"id": 1234821, "title": "Rebirth", "original_title": "Rebirth", "release_date": "2025-06-23", "year": 2025, "poster": "/rb.jpg", "overview": ""},
         ],
     }
     with patch(f"{CLIENT}.async_get_titles", side_effect=MyMoviesAuthError("refused")):
@@ -510,7 +515,8 @@ async def test_offline_box_sets(hass: HomeAssistant) -> None:
     reloaded = "00000000-0000-0000-0000-000000000026"
     assert data.box_of[reloaded] == "00000000-0000-0000-0000-000000000023"
     assert coordinator.describe_child(matrix[1])["watched"] is True
-    assert [c.title for c in data.box_sets[box_key]] == ["Jurassic World", "Fallen Kingdom"]  # no Rebirth
+    # Rebirth premiered the day before the box set: the trilogy still keeps three films.
+    assert [c.title for c in data.box_sets[box_key]] == ["Jurassic World", "Fallen Kingdom", "Dominion"]
     assert coordinator.describe_child(data.box_sets[box_key][0])["poster"] == "https://image.tmdb.org/t/p/w342/jw.jpg"
 
 
