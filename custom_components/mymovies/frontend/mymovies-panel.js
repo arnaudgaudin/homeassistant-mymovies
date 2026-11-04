@@ -665,7 +665,6 @@ class MyMoviesPanel extends HTMLElement {
       <div class="body">
         <div class="cover-col">
           <div class="cover">${this._cover(i, title)}</div>
-          ${i.cover ? `<div class="cover-info">${esc(t.sources[i.cover.source] || i.cover.source)}${i.cover.width ? ` · ${i.cover.width}×${i.cover.height}` : ""}${i.cover.chosen ? ` · ${esc(t.chosen)}` : ""}</div>` : ""}
           ${this._hass.user?.is_admin && !i.editions ? `<button class="secondary small" data-action="change-cover">${esc(t.changeCover)}</button>` : ""}
         </div>
         <div class="info">
@@ -981,7 +980,6 @@ const STYLE = `
   .mini img, .mini .noposter { width: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 6px; background: var(--secondary-background-color, #2224); display: block; }
   .cover-col { flex: 0 0 240px; display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
   .cover-col .cover { flex: none; }
-  .cover-info { font-size: 12px; color: var(--secondary-text-color); text-align: center; }
   .secondary.small { height: 30px; font-size: 13px; }
   .editions { display: flex; flex-direction: column; gap: 6px; }
   .edition { position: relative; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 8px 40px 8px 12px; border: 1px solid var(--divider-color); border-radius: 8px; background: transparent; text-align: left; cursor: pointer; }
