@@ -88,11 +88,15 @@ of covers and offers:
 - the sort options of My Movies (title, collection number, rating, personal rating,
   running time, production year, release date, parental rating, added date),
   ascending or descending;
-- search (title, original title, director, cast) and filters (type, watched);
+- a wall of covers or a list with more details per title;
+- search (title, original title, director, cast), a type filter and a
+  Watched / All / Not watched switch;
 - a ✓ badge on watched titles, including films inside box sets;
 - **Expand box sets**: show the films of each box set instead of the box set itself;
 - a details dialog (synopsis, director, cast, genres, runtime, ratings, dates,
   box set contents) with **Mark as watched** / **Clear watched** buttons.
+- for administrators, an **Import** button to load a new collection export directly
+  from the panel.
 
 The details come from the imported export: re-import it after updating the
 integration to fill in new columns.

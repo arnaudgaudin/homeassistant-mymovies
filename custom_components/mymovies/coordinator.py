@@ -143,6 +143,12 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
         if due:
             self._children_checked = now
 
+    async def async_import_catalog(self, catalog: dict[int, CatalogEntry]) -> None:
+        """Replace the imported export and refresh what depends on it."""
+        self.store.catalog = catalog
+        await self.store.async_save()
+        await self.async_refresh()
+
     def set_child_watched(self, child_id: str, watched: bool) -> None:
         """Record a watched change made from Home Assistant on a box-set film."""
         self._children_watched[child_id.lower()] = watched

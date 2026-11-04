@@ -3,12 +3,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from pathlib import Path
 from typing import Any
 
 import voluptuous as vol
 
-from homeassistant.components.file_upload import process_uploaded_file
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigEntryState,
@@ -29,7 +27,7 @@ from homeassistant.helpers.selector import (
 
 from . import tmdb
 from .api import MyMoviesAuthError, MyMoviesClient, MyMoviesError
-from .catalog import CatalogEntry, CatalogStore, InvalidExportError, parse_export
+from .catalog import CatalogEntry, CatalogStore, InvalidExportError, read_uploaded_export
 from .const import CONF_EXPORT_FILE, CONF_TMDB_API_KEY, DOMAIN
 
 PASSWORD_SELECTOR = TextSelector(
@@ -116,12 +114,6 @@ class MyMoviesConfigFlow(ConfigFlow, domain=DOMAIN):
         )
 
 
-def _read_export(hass: HomeAssistant, file_id: str) -> dict[int, CatalogEntry]:
-    """Parse an uploaded export (runs in the executor)."""
-    with process_uploaded_file(hass, file_id) as path:
-        return parse_export(Path(path))
-
-
 class MyMoviesOptionsFlow(OptionsFlow):
     """Import the collection export and set the optional TMDB key."""
 
@@ -141,7 +133,7 @@ class MyMoviesOptionsFlow(OptionsFlow):
             if not errors and (file_id := user_input.get(CONF_EXPORT_FILE)):
                 try:
                     catalog = await self.hass.async_add_executor_job(
-                        _read_export, self.hass, file_id
+                        read_uploaded_export, self.hass, file_id
                     )
                 except InvalidExportError:
                     errors[CONF_EXPORT_FILE] = "invalid_export"

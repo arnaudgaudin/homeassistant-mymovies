@@ -235,3 +235,30 @@ async def test_box_set_film_watched(hass: HomeAssistant) -> None:
     with pytest.raises(ServiceValidationError) as err:
         await hass.services.async_call(DOMAIN, "mark_watched", {"title": "the matrix"}, blocking=True)
     assert err.value.translation_placeholders["numbers"] == "#1, #4 › Matrix"
+
+
+async def test_import_from_panel(hass: HomeAssistant, hass_ws_client, hass_admin_user) -> None:
+    """Admins import an export from the panel; bad files and non-admins are refused."""
+    entry = await _setup(hass)
+    reader = "custom_components.mymovies.websocket.read_uploaded_export"
+    client = await hass_ws_client(hass)
+    with (
+        patch(reader, return_value=CATALOG),
+        patch(f"{CLIENT}.async_get_titles", return_value=TITLES),
+        patch(f"{CLIENT}.async_get_box_set_children", return_value=BOX_SETS),
+    ):
+        await client.send_json_auto_id({"type": "mymovies/import_export", "file_id": "abc"})
+        msg = await client.receive_json()
+    assert msg["success"] and msg["result"] == {"count": 4}
+    assert entry.runtime_data.store.catalog == CATALOG
+    assert ir.async_get(hass).async_get_issue(DOMAIN, f"catalog_{entry.entry_id}") is None
+
+    with patch(reader, side_effect=InvalidExportError("missing columns")):
+        await client.send_json_auto_id({"type": "mymovies/import_export", "file_id": "abc"})
+        msg = await client.receive_json()
+    assert not msg["success"] and msg["error"]["code"] == "invalid_export"
+
+    hass_admin_user.groups = []  # no longer an administrator
+    await client.send_json_auto_id({"type": "mymovies/import_export", "file_id": "abc"})
+    msg = await client.receive_json()
+    assert not msg["success"] and msg["error"]["code"] == "unauthorized"

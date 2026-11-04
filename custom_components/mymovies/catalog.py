@@ -13,6 +13,7 @@ import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from homeassistant.components.file_upload import process_uploaded_file
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.storage import Store
 
@@ -119,6 +120,12 @@ def parse_export(path: Path) -> dict[int, CatalogEntry]:
     if not catalog:
         raise InvalidExportError("no titles in the file")
     return catalog
+
+
+def read_uploaded_export(hass: HomeAssistant, file_id: str) -> dict[int, CatalogEntry]:
+    """Parse an export uploaded through Home Assistant (runs in the executor)."""
+    with process_uploaded_file(hass, file_id) as path:
+        return parse_export(Path(path))
 
 
 class CatalogStore:
