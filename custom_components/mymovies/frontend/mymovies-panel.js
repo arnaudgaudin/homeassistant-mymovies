@@ -365,15 +365,17 @@ class MyMoviesPanel extends HTMLElement {
     // Editions of one film (same IMDb ID) share a tile; its dialog lists them.
     this._groups = new Map();
     const byImdb = new Map();
+    // A series keeps one IMDb ID for all its seasons: its discs are not editions.
+    const groupable = (i) => i.imdb && !i.children?.length && i.media_type !== "TV Serie";
     for (const i of items) {
-      if (!i.imdb || i.children?.length) continue;
+      if (!groupable(i)) continue;
       if (!byImdb.has(i.imdb)) byImdb.set(i.imdb, []);
       byImdb.get(i.imdb).push(i);
     }
     const out = [];
     const seen = new Set();
     for (const i of items) {
-      const editions = i.imdb && !i.children?.length ? byImdb.get(i.imdb) : null;
+      const editions = groupable(i) ? byImdb.get(i.imdb) : null;
       if (!editions || editions.length < 2) {
         out.push(i);
         continue;
