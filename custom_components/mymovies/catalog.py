@@ -22,7 +22,7 @@ from .const import DOMAIN, STORAGE_VERSION
 
 REQUIRED_COLUMNS = {"Collection Number", "Title", "IMDB Id"}
 NO_IMDB = "tt0000000"  # what the export holds for box sets
-MAX_ACTORS = 8
+MAX_ACTORS = 15  # searchable; the dialog shows the first 8
 
 
 class InvalidExportError(Exception):
