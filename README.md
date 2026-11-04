@@ -95,6 +95,11 @@ python3 -m venv .venv && .venv/bin/pip install pytest-homeassistant-custom-compo
 .venv/bin/pytest tests
 ```
 
+## Credits
+
+Posters are provided by [TMDB](https://www.themoviedb.org).
+This product uses the TMDB API but is not endorsed or certified by TMDB.
+
 ## License
 
 MIT
