@@ -67,6 +67,7 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
         self.store = store
         self._thumbnails: dict[str, bytes | None] = {}
         self._fetching = False
+        self._box_set_cache: dict[str, list[BoxSetChild]] = {}
 
     async def _async_update_data(self) -> MyMoviesData:
         try:
@@ -77,13 +78,36 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             raise ConfigEntryAuthFailed(str(err)) from err
         except MyMoviesError as err:
             raise UpdateFailed(str(err)) from err
-        data = MyMoviesData(titles={t.id.lower(): t for t in titles}, box_sets=box_sets)
+        by_id = {t.id.lower(): t for t in titles}
+        await self._async_complete_box_sets(by_id, box_sets)
+        data = MyMoviesData(titles=by_id, box_sets=box_sets)
         self._update_catalog_issue(data)
         if self._tmdb_missing(data):
             self.config_entry.async_create_background_task(
                 self.hass, self.async_fetch_tmdb(data), f"{DOMAIN}_tmdb_{self.config_entry.entry_id}"
             )
         return data
+
+    async def _async_complete_box_sets(
+        self, titles: dict[str, CollectionTitle], box_sets: dict[str, list[BoxSetChild]]
+    ) -> None:
+        """Add the films of box sets the user did not list, from the catalog.
+
+        GetBoxSetChildTitlesForUser only returns box sets whose films the user listed;
+        the others are read once per box set (titles without IMDb ID) and cached.
+        """
+        for key, title in titles.items():
+            entry = self.entry_for(title)
+            if not entry or entry.imdb or key in box_sets:
+                continue
+            if key not in self._box_set_cache:
+                try:
+                    self._box_set_cache[key] = await self.client.async_get_titles_in_box_set(title.id)
+                except MyMoviesError as err:
+                    _LOGGER.debug("Box set %s not readable: %s", title.id, err)
+                    continue
+            if self._box_set_cache[key]:
+                box_sets[key] = self._box_set_cache[key]
 
     def _update_catalog_issue(self, data: MyMoviesData) -> None:
         """Ask for a (new) export when titles have no name."""

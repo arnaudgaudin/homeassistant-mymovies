@@ -179,6 +179,38 @@ class MyMoviesClient:
             children.sort(key=lambda c: (c.year or 0, c.title))
         return box_sets
 
+    async def async_get_titles_in_box_set(self, box_set_id: str) -> list[BoxSetChild]:
+        """Films of one box set, from the catalog (also when the user listed none)."""
+        response = await self._call(
+            "GetTitlesInBoxSet",
+            {
+                "Handshake": "",
+                "UserName": self._username,
+                "Password": self._password,
+                "Reference": "",
+                "TitleId": box_set_id,
+                "Locale": 0,
+            },
+        )
+        children = []
+        for container in response.iter("Children"):
+            for el in container.findall("Title"):
+                year = el.get("Year") or ""
+                children.append(
+                    BoxSetChild(
+                        id=el.get("WebServiceID", ""),
+                        parent_id=box_set_id.lower(),
+                        title=el.get("Title", ""),
+                        original_title=el.get("OriginalTitle", ""),
+                        year=int(year) if year.isdigit() else None,
+                        edition=(el.get("Edition") or "").strip(),
+                        disc_type=el.get("Type", ""),
+                        thumbnail=el.get("BigThumbnail") or el.get("Thumbnail") or "",
+                    )
+                )
+        children.sort(key=lambda c: (c.year or 0, c.title))
+        return children
+
     async def async_mark_watched(self, title_id: str, when: datetime, notes: str = "") -> None:
         """Log one viewing of a title (sets its watched flag)."""
         await self._call(

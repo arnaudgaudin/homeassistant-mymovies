@@ -178,3 +178,21 @@ async def test_panel_and_websocket(hass: HomeAssistant, hass_ws_client) -> None:
 
     assert await hass.config_entries.async_unload(entry.entry_id)
     assert "mymovies" not in hass.data["frontend_panels"]
+
+
+async def test_box_sets_from_catalog(hass: HomeAssistant) -> None:
+    """Box sets the user did not detail are read once from the catalog, then cached."""
+    entry = await _setup(hass)
+    coordinator = entry.runtime_data
+    coordinator.store.catalog = CATALOG
+    films = [BoxSetChild("m1", "x", "The Matrix", "The Matrix", 1999, "", "4K Ultra HD", "")]
+    with (
+        patch(f"{CLIENT}.async_get_titles", return_value=TITLES),
+        patch(f"{CLIENT}.async_get_box_set_children", return_value={}),
+        patch(f"{CLIENT}.async_get_titles_in_box_set", return_value=films) as per_box,
+    ):
+        await coordinator.async_refresh()
+        await coordinator.async_refresh()
+    # Only #4 has no IMDb ID: one call in total thanks to the cache.
+    assert per_box.await_count == 1
+    assert coordinator.data.box_sets[TITLES[3].id.lower()] == films
