@@ -42,9 +42,12 @@ My Movies app:
    titles are missing.
 
 Add a free [TMDB API key](https://www.themoviedb.org/settings/api) (v3) in the
-same options form for high-resolution posters: titles are looked up by IMDb ID,
-box sets by collection name and the films of box sets by title. Without a key, or
-when TMDB has no poster, the smaller My Movies covers are used.
+same options form for high-resolution posters. Each title is looked up once (by
+IMDb ID, by title and year, or as a collection for box sets; season discs get
+their season's poster) and the sharpest cover between TMDB and My Movies is shown.
+Without a key, the smaller My Movies covers are used. An administrator can pick
+another cover from the title's dialog: any TMDB poster, the My Movies cover or an
+uploaded image (JPEG or PNG, stored in `/config/mymovies/covers`).
 
 ## Entities
 
@@ -89,8 +92,10 @@ of covers and offers:
   running time, production year, release date, parental rating, added date),
   ascending or descending;
 - a wall of covers or a list with more details per title;
-- search (title, original title, director, cast), a type filter and a
-  Watched / All / Not watched switch;
+- search (title, original title, director, cast) and filters: type, genre, age
+  (titles allowed for a 6, 10, 12 or 16-year-old), disc (4K, Blu-ray, DVD, 3D)
+  and a Watched / All / Not watched switch;
+- editions of the same film (same IMDb ID) share one tile; its dialog lists them;
 - a ✓ badge on watched titles, including films inside box sets;
 - **Expand box sets**: show the films of each box set instead of the box set itself;
 - a details dialog (synopsis, director, cast, genres, runtime, ratings, dates,
