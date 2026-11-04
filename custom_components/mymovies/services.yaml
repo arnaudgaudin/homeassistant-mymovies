@@ -1,0 +1,26 @@
+mark_watched:
+  fields:
+    title:
+      required: true
+      example: "42"
+      selector:
+        text:
+    notes:
+      selector:
+        text:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: mymovies
+
+clear_watched:
+  fields:
+    title:
+      required: true
+      example: "42"
+      selector:
+        text:
+    config_entry_id:
+      selector:
+        config_entry:
+          integration: mymovies

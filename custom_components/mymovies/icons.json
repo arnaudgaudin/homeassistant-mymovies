@@ -1,0 +1,12 @@
+{
+  "entity": {
+    "sensor": {
+      "titles": { "default": "mdi:filmstrip-box-multiple" },
+      "watched": { "default": "mdi:eye-check" }
+    }
+  },
+  "services": {
+    "mark_watched": { "service": "mdi:eye-check" },
+    "clear_watched": { "service": "mdi:eye-off" }
+  }
+}

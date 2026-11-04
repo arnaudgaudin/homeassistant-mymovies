@@ -1,0 +1,59 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Compte My Movies",
+        "description": "Connectez-vous avec le compte utilisé dans l'application My Movies.",
+        "data": { "username": "Identifiant", "password": "Mot de passe" },
+        "data_description": {
+          "username": "L'identifiant ou l'e-mail de votre compte My Movies.",
+          "password": "Votre mot de passe My Movies."
+        }
+      },
+      "reauth_confirm": {
+        "title": "Nouvelle authentification",
+        "description": "My Movies n'accepte plus le mot de passe de {username}. Saisissez le mot de passe actuel.",
+        "data": { "password": "Mot de passe" }
+      }
+    },
+    "error": {
+      "invalid_auth": "Identifiant ou mot de passe incorrect.",
+      "cannot_connect": "Impossible de joindre le service My Movies."
+    },
+    "abort": {
+      "already_configured": "Ce compte est déjà configuré.",
+      "reauth_successful": "Nouvelle authentification réussie."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "titles": { "name": "Titres" },
+      "watched": { "name": "Titres vus" }
+    }
+  },
+  "exceptions": {
+    "title_not_found": { "message": "Aucun titre de la collection ne correspond à « {title} »." },
+    "no_entry": { "message": "Aucun compte My Movies n'est chargé." },
+    "several_entries": { "message": "Plusieurs comptes My Movies sont chargés ; précisez config_entry_id." },
+    "api_error": { "message": "My Movies a refusé la requête : {error}" }
+  },
+  "services": {
+    "mark_watched": {
+      "name": "Marquer comme vu",
+      "description": "Enregistre un visionnage du titre dans My Movies.",
+      "fields": {
+        "title": { "name": "Titre", "description": "ID du titre ou numéro dans la collection." },
+        "notes": { "name": "Notes", "description": "Note facultative enregistrée avec le visionnage." },
+        "config_entry_id": { "name": "Compte", "description": "Compte à utiliser s'il y en a plusieurs." }
+      }
+    },
+    "clear_watched": {
+      "name": "Effacer le « vu »",
+      "description": "Supprime tous les visionnages enregistrés du titre dans My Movies.",
+      "fields": {
+        "title": { "name": "Titre", "description": "ID du titre ou numéro dans la collection." },
+        "config_entry_id": { "name": "Compte", "description": "Compte à utiliser s'il y en a plusieurs." }
+      }
+    }
+  }
+}
