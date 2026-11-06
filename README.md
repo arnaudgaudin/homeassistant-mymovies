@@ -92,8 +92,10 @@ of covers and offers:
   running time, production year, release date, parental rating, added date),
   ascending or descending;
 - a wall of covers or a list with more details per title;
-- search (title, original title, director, cast) and filters: type, genre, age
-  (titles allowed for a 6, 10, 12 or 16-year-old), disc (4K, Blu-ray, DVD, 3D),
+- search (title, original title, director, cast) and filters: type, genre,
+  classification (the six of My Movies: not rated, all audiences, parental
+  guidance, not under 12, 16 or 18; other systems' ratings are mapped onto them),
+  disc (4K, Blu-ray, DVD, 3D),
   a production year range with two handles
   and a Watched / All / Not watched switch;
 - editions of the same film (same IMDb ID) share one tile; its dialog lists them;

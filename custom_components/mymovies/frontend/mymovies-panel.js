@@ -25,7 +25,8 @@ const STRINGS = {
     tmdbNotice: "This product uses the TMDB API but is not endorsed or certified by TMDB.",
     unofficial: "Unofficial integration, not affiliated with or endorsed by My Movies.",
     years: "Years", filters: "Filters", resetFilters: "Reset filters",
-    allAges: "Any age", allAudiences: "All audiences", forAge: "For a {n}-year-old",
+    allClasses: "All classifications",
+    classes: { none: "Not rated", all: "All audiences", parental: "Parental guidance", 12: "Not under 12", 16: "Not under 16", 18: "Not under 18" },
     editions: "editions", editionsTitle: "Editions in the collection",
     changeCover: "Change cover", coverTitle: "Choose the cover", coverAuto: "Automatic (best resolution)",
     coverUpload: "Use my own image (JPEG or PNG)", coverUploadButton: "Upload", back: "Back",
@@ -61,7 +62,8 @@ const STRINGS = {
     tmdbNotice: "Ce produit utilise l'API TMDB mais n'est ni approuvé ni certifié par TMDB.",
     unofficial: "Intégration non officielle, ni affiliée à My Movies ni approuvée par My Movies.",
     years: "Années", filters: "Filtres", resetFilters: "Réinitialiser les filtres",
-    allAges: "Tous les âges", allAudiences: "Tout public", forAge: "Pour un enfant de {n} ans",
+    allClasses: "Toutes les classifications",
+    classes: { none: "Sans classification", all: "Tous publics", parental: "Accord parental", 12: "Interdit aux moins de 12 ans", 16: "Interdit aux moins de 16 ans", 18: "Interdit aux moins de 18 ans" },
     editions: "éditions", editionsTitle: "Éditions dans la collection",
     changeCover: "Changer la jaquette", coverTitle: "Choisir la jaquette", coverAuto: "Automatique (meilleure résolution)",
     coverUpload: "Utiliser ma propre image (JPEG ou PNG)", coverUploadButton: "Importer", back: "Retour",
@@ -89,7 +91,7 @@ const SORT_KEYS = {
   year: (i) => i.year,
   // The film's release (TMDB), else its production year; not the disc's release.
   release_date: (i) => i.film_release_date || (i.year ? `${i.year}-12-31` : null),
-  parental_rating: (i) => i.parental_rating || null,
+  parental_rating: (i) => RATING_CLASSES.indexOf(ratingClass(i.parental_rating)),
   added: (i) => i.added || null,
 };
 
@@ -108,17 +110,20 @@ const GENRES_FR = {
 // Genres spelled two ways in My Movies are filtered together.
 const GENRE_ALIASES = { Anime: "Animation", Sports: "Sport", Thriller: "Suspense/Thriller" };
 const canonGenre = (g) => GENRE_ALIASES[g] || g;
-const AGES = ["0", "6", "10", "12", "16"];
-// Minimum age of a parental rating; null when unknown ("Accord parental", "Unrated"...).
-function minimumAge(rating) {
+// Classifications of My Movies, in order; other systems' ratings are mapped onto them.
+const RATING_CLASSES = ["none", "all", "parental", "12", "16", "18"];
+function ratingClass(rating) {
   const r = String(rating || "").trim().toLowerCase();
-  if (!r) return null;
-  if (/tous publics|^tp$|^u$|^g$|all ages/.test(r)) return 0;
-  if (r === "pg-13") return 13;
-  if (r === "pg") return 10;
-  if (r === "r" || r === "nc-17") return 17;
+  if (!r || /unrated|not rated|^nr$|non class|sans class/.test(r)) return "none";
+  if (/tous publics|^tp$|^u$|^g$|all ages/.test(r)) return "all";
+  if (/accord parental|^pg$/.test(r)) return "parental";
+  if (r === "pg-13") return "12";
+  if (r === "r") return "16";
+  if (r === "nc-17") return "18";
   const n = r.match(/(\d{1,2})/);
-  return n ? Number(n[1]) : null;
+  if (!n) return "none";
+  const age = Number(n[1]);
+  return age <= 6 ? "all" : age < 12 ? "parental" : age < 16 ? "12" : age < 18 ? "16" : "18";
 }
 // Edition shown on the tile of a film owned in several editions: 4K first.
 const DISC_RANK = { "4K Ultra HD": 0, "Blu-ray": 1, DVD: 2 };
@@ -143,7 +148,7 @@ const norm = (value) =>
   String(value ?? "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
 function loadState() {
-  const defaults = { sort: "title", dir: "asc", type: "all", genre: "all", age: "all", yearFrom: null, yearTo: null, disc: "all", watched: "all", expand: false, view: "grid", q: "" };
+  const defaults = { sort: "title", dir: "asc", type: "all", genre: "all", classif: "all", yearFrom: null, yearTo: null, disc: "all", watched: "all", expand: false, view: "grid", q: "" };
   try {
     return { ...defaults, ...JSON.parse(localStorage.getItem(STATE_KEY) || "{}"), q: "" };
   } catch (err) {
@@ -228,7 +233,7 @@ class MyMoviesPanel extends HTMLElement {
   _activeFilters() {
     // Filters narrowing the collection (sort, view and box sets are not filters).
     const st = this._state;
-    return [st.type, st.genre, st.age, st.disc, st.watched].filter((v) => v !== "all").length
+    return [st.type, st.genre, st.classif, st.disc, st.watched].filter((v) => v !== "all").length
       + (st.yearFrom != null || st.yearTo != null ? 1 : 0);
   }
 
@@ -341,10 +346,7 @@ class MyMoviesPanel extends HTMLElement {
       if (st.yearFrom != null || st.yearTo != null) {
         if (!i.year || (st.yearFrom != null && i.year < st.yearFrom) || (st.yearTo != null && i.year > st.yearTo)) return false;
       }
-      if (st.age !== "all") {
-        const age = minimumAge(i.parental_rating);
-        if (age == null || age > Number(st.age)) return false;
-      }
+      if (st.classif !== "all" && ratingClass(i.parental_rating) !== st.classif) return false;
       if (st.disc === "3d" && !i.three_d) return false;
       if (st.disc !== "all" && st.disc !== "3d" && i.disc_type !== st.disc) return false;
       if (st.watched === "watched" && !i.watched) return false;
@@ -457,9 +459,9 @@ class MyMoviesPanel extends HTMLElement {
           ${option("series", t.series, st.type)}${option("documentaries", t.documentaries, st.type)}
         </select></span>
         <span class="select"><select id="genre" aria-label="${esc(t.allGenres)}">${option("all", t.allGenres, "all")}</select></span>
-        <span class="select wide"><select id="age" aria-label="${esc(t.allAges)}">
-          ${option("all", t.allAges, st.age)}${option("0", t.allAudiences, st.age)}
-          ${AGES.slice(1).map((n) => option(n, t.forAge.replace("{n}", n), st.age)).join("")}
+        <span class="select wide"><select id="classif" aria-label="${esc(t.allClasses)}">
+          ${option("all", t.allClasses, st.classif)}
+          ${RATING_CLASSES.map((c) => option(c, t.classes[c], st.classif)).join("")}
         </select></span>
         <div class="years" id="years" title="${esc(t.years)}">
           <span class="seg-label">${esc(t.years)}</span>
@@ -518,7 +520,7 @@ class MyMoviesPanel extends HTMLElement {
       $("filters-toggle").setAttribute("aria-expanded", String(this._filtersOpen));
     });
     $("filters-reset").addEventListener("click", () => {
-      Object.assign(this._state, { type: "all", genre: "all", age: "all", disc: "all", watched: "all", yearFrom: null, yearTo: null });
+      Object.assign(this._state, { type: "all", genre: "all", classif: "all", disc: "all", watched: "all", yearFrom: null, yearTo: null });
       this._saveState();
       this._renderShell();
       this._renderDiscOptions();
@@ -530,7 +532,7 @@ class MyMoviesPanel extends HTMLElement {
     $("type").addEventListener("change", (ev) => update({ type: ev.target.value }));
     $("disc").addEventListener("change", (ev) => update({ disc: ev.target.value }));
     $("genre").addEventListener("change", (ev) => update({ genre: ev.target.value }));
-    $("age").addEventListener("change", (ev) => update({ age: ev.target.value }));
+    $("classif").addEventListener("change", (ev) => update({ classif: ev.target.value }));
     const onYears = (moved) => {
       const [lo, hi] = this._yearBounds || [0, 0];
       let from = Number($("year-from").value);
@@ -604,7 +606,7 @@ class MyMoviesPanel extends HTMLElement {
   _row(i) {
     const t = this._t;
     const title = i.title || `#${i.collection_number}`;
-    const meta = [this._runtime(i.runtime), i.disc_type, i.three_d ? "3D" : "", i.parental_rating, i.edition].filter(Boolean);
+    const meta = [this._runtime(i.runtime), i.disc_type, i.three_d ? "3D" : "", i.parental_rating && t.classes[ratingClass(i.parental_rating)], i.edition].filter(Boolean);
     const people = [i.director, (i.genres || []).map((g) => this._genre(g)).join(", ")].filter(Boolean);
     const side = [
       i.rating != null ? `★ ${i.rating}` : "",
@@ -696,7 +698,7 @@ class MyMoviesPanel extends HTMLElement {
     const i = this._findItem(this._dialog.key);
     if (!i) return null;
     const title = i.title || `#${i.collection_number}`;
-    const meta = [i.year, this._runtime(i.runtime), i.parental_rating, i.disc_type, i.three_d ? "3D" : "", i.edition].filter(Boolean);
+    const meta = [i.year, this._runtime(i.runtime), i.parental_rating && t.classes[ratingClass(i.parental_rating)], i.disc_type, i.three_d ? "3D" : "", i.edition].filter(Boolean);
     const children = !i.child ? i.children || [] : [];
     return `
       <div class="body">
