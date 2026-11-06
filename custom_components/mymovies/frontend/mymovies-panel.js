@@ -13,6 +13,7 @@ const STRINGS = {
     segWatched: "Watched", segAll: "All", segUnwatched: "Not watched", watchedFilter: "Watched filter",
     boxSets: "Box sets", editionsLabel: "Editions", collapsed: "Grouped", expanded: "Expanded", refresh: "Refresh", titles: "titles", films: "films",
     grid: "Wall", list: "List", view: "View",
+    viewings: "Watched on",
     boxSet: "Box set", markWatched: "Mark as watched", clearWatched: "Clear watched",
     close: "Close", director: "Director", cast: "Cast", genres: "Genres", runtime: "Runtime",
     rating: "Rating", personalRating: "Personal rating", parental: "Parental rating",
@@ -52,6 +53,7 @@ const STRINGS = {
     segWatched: "Vus", segAll: "Tous", segUnwatched: "Non vus", watchedFilter: "Filtre vu",
     boxSets: "Coffrets", editionsLabel: "Éditions", collapsed: "Repliés", expanded: "Dépliés", refresh: "Actualiser", titles: "titres", films: "films",
     grid: "Mur", list: "Liste", view: "Affichage",
+    viewings: "Vu le",
     boxSet: "Coffret", markWatched: "Marquer comme vu", clearWatched: "Effacer le « vu »",
     close: "Fermer", director: "Réalisation", cast: "Avec", genres: "Genres", runtime: "Durée",
     rating: "Note", personalRating: "Note personnelle", parental: "Classification",
@@ -754,6 +756,7 @@ class MyMoviesPanel extends HTMLElement {
             ${this._info(t.released, this._date(i.film_release_date))}
             ${this._info(t.discReleased, this._date(i.release_date))}
             ${this._info(t.added, this._date(i.added))}
+            ${this._info(t.viewings, (i.viewings || []).slice().reverse().map((d) => this._date(d.slice(0, 10))).join(", "))}
             ${this._info(t.number, i.child ? "" : i.collection_number)}
             ${this._info(t.group, i.group)}
           </div>
@@ -783,7 +786,7 @@ class MyMoviesPanel extends HTMLElement {
                 </button>`;
               }).join("")}
             </div>` : ""}
-          ${i.editions || !this._api ? "" : `<div class="actions">
+          ${i.editions ? "" : `<div class="actions">
             ${this._dialog.error ? `<span class="error">${esc(t.failed)} : ${esc(this._dialog.error)}</span>` : ""}
             ${i.watched ? `<button class="secondary" data-action="clear" ${this._busy ? "disabled" : ""}>${esc(t.clearWatched)}</button>` : ""}
             <button class="primary" data-action="mark" ${this._busy ? "disabled" : ""}>${esc(t.markWatched)}</button>

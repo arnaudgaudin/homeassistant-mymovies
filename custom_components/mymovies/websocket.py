@@ -80,7 +80,6 @@ def ws_collection(
             "entry_id": entry.entry_id,
             "account": entry.title,
             "titles": titles,
-            # Watched writes need the My Movies API.
             "api": api_enabled() and not coordinator.offline,
         },
     )

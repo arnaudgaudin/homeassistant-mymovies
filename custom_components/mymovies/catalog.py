@@ -178,6 +178,9 @@ class CatalogStore:
     overrides: lower-case title or film ID -> cover chosen by the user
         ({"source": "tmdb", "path", ...}, {"source": "mymovies"} or
         {"source": "upload", "file", ...}).
+    viewings: lower-case title or film ID -> watched state kept in Home Assistant
+        ({"watched": bool, "dates": [ISO date-time of each viewing]}); it wins over
+        the export's Watched column.
     """
 
     def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
@@ -185,12 +188,14 @@ class CatalogStore:
         self.catalog: dict[int, CatalogEntry] = {}
         self.covers: dict[str, dict] = {}
         self.overrides: dict[str, dict] = {}
+        self.viewings: dict[str, dict] = {}
 
     async def async_load(self) -> None:
         data = await self._store.async_load() or {}
         self.catalog = {int(k): CatalogEntry(**v) for k, v in data.get("catalog", {}).items()}
         self.covers = data.get("covers", {})
         self.overrides = data.get("overrides", {})
+        self.viewings = data.get("viewings", {})
 
     async def async_save(self) -> None:
         await self._store.async_save(
@@ -198,6 +203,7 @@ class CatalogStore:
                 "catalog": {str(k): asdict(v) for k, v in self.catalog.items()},
                 "covers": self.covers,
                 "overrides": self.overrides,
+                "viewings": self.viewings,
             }
         )
 

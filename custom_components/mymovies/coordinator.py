@@ -137,7 +137,7 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             titles[title_id] = CollectionTitle(
                 id=title_id,
                 collection_number=number,
-                watched=entry.watched,
+                watched=self.local_watched(title_id, entry.watched),
                 group=entry.group,
                 added=entry.added,
                 data_changed="",
@@ -307,6 +307,23 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
         self.store.catalog = catalog
         await self.store.async_save()
         await self.async_refresh()
+
+    def local_watched(self, key: str, default: bool) -> bool:
+        """Watched state kept in Home Assistant, else the export's."""
+        viewing = self.store.viewings.get(key.lower())
+        return viewing["watched"] if viewing else default
+
+    async def async_log_viewing(self, key: str, watched: bool, when: datetime) -> None:
+        """Without the API: log a viewing (dated, like My Movies) or clear them all."""
+        key = key.lower()
+        if watched:
+            viewing = self.store.viewings.setdefault(key, {"watched": True, "dates": []})
+            viewing["watched"] = True
+            viewing["dates"].append(when.isoformat(timespec="seconds"))
+        else:
+            self.store.viewings[key] = {"watched": False, "dates": []}
+        await self.store.async_save()
+        self.async_set_updated_data(self._offline_data())
 
     def set_child_watched(self, child_id: str, watched: bool) -> None:
         """Record a watched change made from Home Assistant on a box-set film."""
@@ -596,6 +613,7 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             "watched": self._child_watched(child),
             "title_id": self.data.child_titles.get(key) if self.data else None,
         }
+        data["viewings"] = (self.store.viewings.get(data["title_id"] or key) or {}).get("dates", [])
         # A disc owned as its own title has the export's genres, else TMDB's.
         title = self.data.titles.get(data["title_id"]) if self.data and data["title_id"] else None
         entry = self.entry_for(title) if title else None
@@ -609,6 +627,8 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             return False
         if title_id := self.data.child_titles.get(child.id.lower()):
             return self.data.titles[title_id].watched
+        if self.offline:
+            return self.local_watched(child.id, False)
         return self.data.children_watched.get(child.id.lower(), False)
 
     def describe(self, title: CollectionTitle, *, details: bool = False) -> dict[str, Any]:
@@ -623,6 +643,7 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             "imdb": entry.imdb if entry else None,
             "year": entry.year if entry else None,
             "watched": title.watched,
+            "viewings": (self.store.viewings.get(key) or {}).get("dates", []),
         }
         self._apply_cover(data, self.cover(key))
         children = self.data.box_sets.get(key, []) if self.data else []

@@ -14,8 +14,9 @@ Connect your [My Movies](https://www.mymovies.dk) collection to Home Assistant:
 
 > **My Movies API switched off.** On 2026-11-04 My Movies closed its API to
 > third-party apps. The integration now works from the collection export (CSV) of the
-> My Movies app, completed by TMDB: setup asks for no account, and marking titles as
-> watched (actions and panel buttons) is not offered. The API code is kept and comes
+> My Movies app, completed by TMDB, and setup asks for no account. Marking a title as
+> watched still works: each viewing is kept in Home Assistant with its date (it wins over
+> the export's Watched column), as My Movies does. The API code is kept and comes
 > back by setting `API_ENABLED = True` in `const.py` if access is granted again.
 
 ## Installation

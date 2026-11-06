@@ -444,7 +444,6 @@ async def test_cover_choice(hass: HomeAssistant, hass_ws_client) -> None:
 
 async def test_offline_from_export(hass: HomeAssistant) -> None:
     """When My Movies refuses its API, the collection comes from the imported export."""
-    from homeassistant.exceptions import HomeAssistantError
 
     entry = await _setup(hass)
     coordinator = entry.runtime_data
@@ -460,9 +459,17 @@ async def test_offline_from_export(hass: HomeAssistant) -> None:
     assert sorted(titles) == [1, 2, 3, 4, 5] and titles[5].watched
     assert coordinator.data.box_sets == {}
     assert coordinator.mymovies_cover(titles[1].id.lower()) is None
-    with pytest.raises(HomeAssistantError) as err:
-        await hass.services.async_call(DOMAIN, "mark_watched", {"title": "Up"}, blocking=True)
-    assert err.value.translation_key == "offline"
+    # Watched changes are kept in Home Assistant, each viewing with its date.
+    sin_city = titles[1].id.lower()
+    for _ in range(2):
+        await hass.services.async_call(DOMAIN, "mark_watched", {"title": "Sin City"}, blocking=True)
+    assert len(coordinator.store.viewings[sin_city]["dates"]) == 2
+    assert coordinator.describe(coordinator.data.titles[sin_city])["watched"]
+    assert len(coordinator.describe(coordinator.data.titles[sin_city])["viewings"]) == 2
+    await hass.services.async_call(DOMAIN, "clear_watched", {"title": "Up"}, blocking=True)
+    up = titles[5].id.lower()
+    assert not coordinator.data.titles[up].watched  # wins over the export's Watched column
+    assert coordinator.store.viewings[up] == {"watched": False, "dates": []}
 
     # Without any export, refusals still ask to sign in again.
     coordinator.store.catalog = {}
@@ -625,8 +632,7 @@ async def test_api_switched_off(hass: HomeAssistant, hass_ws_client) -> None:
         coordinator.store.catalog = dict(CATALOG)
         await coordinator.async_refresh()
         assert coordinator.offline and len(coordinator.data.titles) == len(CATALOG)
-        assert not hass.services.has_service(DOMAIN, "mark_watched")
-        assert hass.services.has_service(DOMAIN, "get_titles")
+        assert hass.services.has_service(DOMAIN, "mark_watched")  # logged in Home Assistant
         client = await hass_ws_client(hass)
         await client.send_json({"id": 1, "type": "mymovies/collection"})
         assert (await client.receive_json())["result"]["api"] is False

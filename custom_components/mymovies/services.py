@@ -19,7 +19,7 @@ from homeassistant.util import dt as dt_util
 
 from .api import BoxSetChild, CollectionTitle, MyMoviesError
 from .catalog import normalize_title as _norm
-from .const import ATTR_NOTES, ATTR_TITLE, DOMAIN, api_enabled
+from .const import ATTR_NOTES, ATTR_TITLE, DOMAIN
 from .coordinator import MyMoviesConfigEntry
 
 SERVICE_MARK_WATCHED = "mark_watched"
@@ -111,9 +111,11 @@ def async_setup_services(hass: HomeAssistant) -> None:
 
     async def _write(call: ServiceCall, mark: bool) -> None:
         entry = _get_entry(hass, call)
-        if entry.runtime_data.offline:
-            raise HomeAssistantError(translation_domain=DOMAIN, translation_key="offline")
         title = _resolve(entry, call.data[ATTR_TITLE])
+        if entry.runtime_data.offline:
+            # Without the API the viewings are kept in Home Assistant, dated like in My Movies.
+            await entry.runtime_data.async_log_viewing(title.id, mark, dt_util.now())
+            return
         client = entry.runtime_data.client
         try:
             if mark:
@@ -141,10 +143,8 @@ def async_setup_services(hass: HomeAssistant) -> None:
         titles = sorted(coordinator.data.titles.values(), key=lambda t: t.collection_number)
         return {"titles": [coordinator.describe(t) for t in titles]}
 
-    # Watched writes go through the My Movies API: not offered while it is switched off.
-    if api_enabled():
-        hass.services.async_register(DOMAIN, SERVICE_MARK_WATCHED, mark_watched, schema=MARK_SCHEMA)
-        hass.services.async_register(DOMAIN, SERVICE_CLEAR_WATCHED, clear_watched, schema=CLEAR_SCHEMA)
+    hass.services.async_register(DOMAIN, SERVICE_MARK_WATCHED, mark_watched, schema=MARK_SCHEMA)
+    hass.services.async_register(DOMAIN, SERVICE_CLEAR_WATCHED, clear_watched, schema=CLEAR_SCHEMA)
     hass.services.async_register(
         DOMAIN,
         SERVICE_GET_TITLES,
