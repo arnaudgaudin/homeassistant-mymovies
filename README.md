@@ -107,7 +107,7 @@ of covers and offers:
   classification (the six of My Movies: not rated, all audiences, parental
   guidance, not under 12, 16 or 18; other systems' ratings are mapped onto them),
   disc (4K, Blu-ray, DVD, 3D),
-  a production year range with two handles
+  a production year range and a rating range, each with two handles,
   and a Watched / All / Not watched switch;
 - editions of the same film (same IMDb ID) share one tile and its dialog lists them,
   or, with **Editions: Expanded**, get one tile each with their disc and edition;

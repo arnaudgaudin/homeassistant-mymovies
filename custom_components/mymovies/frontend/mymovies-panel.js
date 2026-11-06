@@ -26,7 +26,7 @@ const STRINGS = {
     creditCollection: "Collection data", creditCovers: "Covers",
     tmdbNotice: "This product uses the TMDB API but is not endorsed or certified by TMDB.",
     unofficial: "Unofficial integration, not affiliated with or endorsed by My Movies.",
-    years: "Years", filters: "Filters", resetFilters: "Reset filters",
+    years: "Years", ratingsRange: "Rating", filters: "Filters", resetFilters: "Reset filters",
     allClasses: "All classifications",
     stats: "Statistics", statTitles: "titles", withoutData: "{n} titles without this information", noData: "No data yet.",
     over: "≥ {n}", minutes: "minutes", withoutDataOne: "1 title without this information",
@@ -68,7 +68,7 @@ const STRINGS = {
     creditCollection: "Données de la collection", creditCovers: "Jaquettes",
     tmdbNotice: "Ce produit utilise l'API TMDB mais n'est ni approuvé ni certifié par TMDB.",
     unofficial: "Intégration non officielle, ni affiliée à My Movies ni approuvée par My Movies.",
-    years: "Années", filters: "Filtres", resetFilters: "Réinitialiser les filtres",
+    years: "Années", ratingsRange: "Note", filters: "Filtres", resetFilters: "Réinitialiser les filtres",
     allClasses: "Toutes les classifications",
     stats: "Statistiques", statTitles: "titres", withoutData: "{n} titres sans cette information", noData: "Aucune donnée pour l'instant.",
     over: "≥ {n}", minutes: "minutes", withoutDataOne: "1 titre sans cette information",
@@ -120,6 +120,11 @@ const GENRES_FR = {
 // Genres spelled two ways in My Movies are filtered together.
 const GENRE_ALIASES = { Anime: "Animation", Sports: "Sport", Thriller: "Suspense/Thriller" };
 const canonGenre = (g) => GENRE_ALIASES[g] || g;
+// Range filters with two handles: production year and rating.
+const RANGES = {
+  year: { value: (i) => i.year || null, step: 1, from: "yearFrom", to: "yearTo" },
+  rating: { value: (i) => i.rating ?? null, step: 0.5, from: "ratingFrom", to: "ratingTo" },
+};
 // Classifications of My Movies, in order; other systems' ratings are mapped onto them.
 const RATING_CLASSES = ["none", "tp", "parental", "12", "16", "18"];
 function ratingClass(rating) {
@@ -177,7 +182,7 @@ const norm = (value) =>
   String(value ?? "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
 function loadState() {
-  const defaults = { sort: "title", dir: "asc", type: "all", genre: "all", classif: "all", yearFrom: null, yearTo: null, disc: "all", watched: "all", expand: false, editions: "collapsed", view: "grid", q: "" };
+  const defaults = { sort: "title", dir: "asc", type: "all", genre: "all", classif: "all", yearFrom: null, yearTo: null, ratingFrom: null, ratingTo: null, disc: "all", watched: "all", expand: false, editions: "collapsed", view: "grid", q: "" };
   try {
     return { ...defaults, ...JSON.parse(localStorage.getItem(STATE_KEY) || "{}"), q: "" };
   } catch (err) {
@@ -239,7 +244,7 @@ class MyMoviesPanel extends HTMLElement {
     }
     this._renderDiscOptions();
     this._renderGenreOptions();
-    this._renderYears();
+    this._renderRanges();
     this._renderGrid();
     if (this._dialog?.kind === "title") this._renderDialog(false);
   }
@@ -264,36 +269,42 @@ class MyMoviesPanel extends HTMLElement {
     // Filters narrowing the collection (sort, view and box sets are not filters).
     const st = this._state;
     return [st.type, st.genre, st.classif, st.disc, st.watched].filter((v) => v !== "all").length
-      + (st.yearFrom != null || st.yearTo != null ? 1 : 0);
+      + Object.values(RANGES).filter((r) => st[r.from] != null || st[r.to] != null).length;
   }
 
-  _renderYears() {
-    // The range goes from the oldest to the newest production year of the collection.
-    const years = (this._titles || []).flatMap((t) => [t.year, ...(t.children || []).map((c) => c.year)]).filter(Boolean);
-    if (!years.length) return;
-    const lo = Math.min(...years);
-    const hi = Math.max(...years);
-    this._yearBounds = [lo, hi];
-    const clamp = (y, fallback) => (y == null ? fallback : Math.min(hi, Math.max(lo, y)));
-    const from = clamp(this._state.yearFrom, lo);
-    const to = clamp(this._state.yearTo, hi);
-    for (const [id, value] of [["year-from", from], ["year-to", to]]) {
-      const input = this.shadowRoot.getElementById(id);
+  _renderRanges() {
+    for (const name of Object.keys(RANGES)) this._renderRange(name);
+  }
+
+  _renderRange(name) {
+    // The range goes from the smallest to the largest value in the collection, films of box sets included.
+    const r = RANGES[name];
+    const values = (this._titles || []).flatMap((t) => [t, ...(t.children || [])]).map(r.value).filter((v) => v != null);
+    if (!values.length) return;
+    const lo = Math.floor(Math.min(...values) / r.step) * r.step;
+    const hi = Math.ceil(Math.max(...values) / r.step) * r.step;
+    this._bounds = { ...this._bounds, [name]: [lo, hi] };
+    const clamp = (v, fallback) => (v == null ? fallback : Math.min(hi, Math.max(lo, v)));
+    const from = clamp(this._state[r.from], lo);
+    const to = clamp(this._state[r.to], hi);
+    for (const [end, value] of [["from", from], ["to", to]]) {
+      const input = this.shadowRoot.getElementById(`${name}-${end}`);
       input.min = lo;
       input.max = hi;
-      input.step = 1;
+      input.step = r.step;
       input.value = value;
     }
-    this._paintYears(from, to);
+    this._paintRange(name, from, to);
   }
 
-  _paintYears(from, to) {
-    const [lo, hi] = this._yearBounds || [from, to];
+  _paintRange(name, from, to) {
+    const [lo, hi] = this._bounds?.[name] || [from, to];
     const span = hi - lo || 1;
-    const fill = this.shadowRoot.getElementById("years-fill");
+    const fill = this.shadowRoot.getElementById(`${name}-fill`);
     fill.style.left = `${((from - lo) / span) * 100}%`;
     fill.style.right = `${((hi - to) / span) * 100}%`;
-    this.shadowRoot.getElementById("years-label").textContent = from === to ? `${from}` : `${from} – ${to}`;
+    const fmt = (v) => v.toLocaleString(this._lang, { useGrouping: false });
+    this.shadowRoot.getElementById(`${name}-label`).textContent = from === to ? fmt(from) : `${fmt(from)} – ${fmt(to)}`;
   }
 
   _renderDiscOptions() {
@@ -373,8 +384,10 @@ class MyMoviesPanel extends HTMLElement {
     const items = this._allItems().filter((i) => {
       if (st.type !== "all" && i.media_type !== TYPES[st.type]) return false;
       if (st.genre !== "all" && !(i.genres || []).some((g) => canonGenre(g) === st.genre)) return false;
-      if (st.yearFrom != null || st.yearTo != null) {
-        if (!i.year || (st.yearFrom != null && i.year < st.yearFrom) || (st.yearTo != null && i.year > st.yearTo)) return false;
+      for (const r of Object.values(RANGES)) {
+        if (st[r.from] == null && st[r.to] == null) continue;
+        const v = r.value(i);
+        if (v == null || (st[r.from] != null && v < st[r.from]) || (st[r.to] != null && v > st[r.to])) return false;
       }
       if (st.classif !== "all" && ratingClass(i.parental_rating) !== st.classif) return false;
       if (st.disc === "3d" && !i.three_d) return false;
@@ -462,6 +475,16 @@ class MyMoviesPanel extends HTMLElement {
       `<option value="${value}" ${current === value ? "selected" : ""}>${esc(label)}</option>`;
     const seg = (attr, value, label, current, extra = "") =>
       `<button type="button" role="radio" data-${attr}="${value}" aria-checked="${current === value}" class="${current === value ? "active" : ""}" ${extra}>${label}</button>`;
+    const rangeBox = (name, label) => `
+        <div class="years" title="${esc(label)}">
+          <span class="seg-label">${esc(label)}</span>
+          <span class="years-label" id="${name}-label"></span>
+          <div class="range">
+            <span class="track"></span><span class="fill" id="${name}-fill"></span>
+            <input type="range" id="${name}-from" aria-label="${esc(label)} min" />
+            <input type="range" id="${name}-to" aria-label="${esc(label)} max" />
+          </div>
+        </div>`;
     this.shadowRoot.innerHTML = `
       <style>${STYLE}</style>
       <div class="header">
@@ -496,15 +519,8 @@ class MyMoviesPanel extends HTMLElement {
           ${option("all", t.allClasses, st.classif)}
           ${RATING_CLASSES.map((c) => option(c, t.classes[c], st.classif)).join("")}
         </select></span>
-        <div class="years" id="years" title="${esc(t.years)}">
-          <span class="seg-label">${esc(t.years)}</span>
-          <span class="years-label" id="years-label"></span>
-          <div class="range">
-            <span class="track"></span><span class="fill" id="years-fill"></span>
-            <input type="range" id="year-from" aria-label="${esc(t.years)} min" />
-            <input type="range" id="year-to" aria-label="${esc(t.years)} max" />
-          </div>
-        </div>
+        ${rangeBox("year", t.years)}
+        ${rangeBox("rating", t.ratingsRange)}
         <span class="select wide"><select id="disc" aria-label="${esc(t.allDiscs)}">${option("all", t.allDiscs, "all")}</select></span>
         <div class="segmented" id="watched" role="radiogroup" aria-label="${esc(t.watchedFilter)}">
           ${seg("watched", "watched", esc(t.segWatched), st.watched)}${seg("watched", "all", esc(t.segAll), st.watched)}${seg("watched", "unwatched", esc(t.segUnwatched), st.watched)}
@@ -556,12 +572,12 @@ class MyMoviesPanel extends HTMLElement {
       $("filters-toggle").setAttribute("aria-expanded", String(this._filtersOpen));
     });
     $("filters-reset").addEventListener("click", () => {
-      Object.assign(this._state, { type: "all", genre: "all", classif: "all", disc: "all", watched: "all", yearFrom: null, yearTo: null });
+      Object.assign(this._state, { type: "all", genre: "all", classif: "all", disc: "all", watched: "all", yearFrom: null, yearTo: null, ratingFrom: null, ratingTo: null });
       this._saveState();
       this._renderShell();
       this._renderDiscOptions();
       this._renderGenreOptions();
-      this._renderYears();
+      this._renderRanges();
       this._renderGrid();
     });
     $("sort").addEventListener("change", (ev) => update({ sort: ev.target.value }));
@@ -569,21 +585,24 @@ class MyMoviesPanel extends HTMLElement {
     $("disc").addEventListener("change", (ev) => update({ disc: ev.target.value }));
     $("genre").addEventListener("change", (ev) => update({ genre: ev.target.value }));
     $("classif").addEventListener("change", (ev) => update({ classif: ev.target.value }));
-    const onYears = (moved) => {
-      const [lo, hi] = this._yearBounds || [0, 0];
-      let from = Number($("year-from").value);
-      let to = Number($("year-to").value);
+    const onRange = (name, moved) => {
+      const r = RANGES[name];
+      const [lo, hi] = this._bounds?.[name] || [0, 0];
+      let from = Number($(`${name}-from`).value);
+      let to = Number($(`${name}-to`).value);
       if (from > to) {
         if (moved === "from") to = from;
         else from = to;
-        $("year-from").value = from;
-        $("year-to").value = to;
+        $(`${name}-from`).value = from;
+        $(`${name}-to`).value = to;
       }
-      this._paintYears(from, to);
-      update({ yearFrom: from > lo ? from : null, yearTo: to < hi ? to : null });
+      this._paintRange(name, from, to);
+      update({ [r.from]: from > lo ? from : null, [r.to]: to < hi ? to : null });
     };
-    $("year-from").addEventListener("input", () => onYears("from"));
-    $("year-to").addEventListener("input", () => onYears("to"));
+    for (const name of Object.keys(RANGES)) {
+      $(`${name}-from`).addEventListener("input", () => onRange(name, "from"));
+      $(`${name}-to`).addEventListener("input", () => onRange(name, "to"));
+    }
     segmented("watched", "watched");
     segmented("view", "view");
     segmented("expand", "expand", (value) => value === "expanded");
