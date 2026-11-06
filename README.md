@@ -48,8 +48,12 @@ My Movies app:
 3. Re-import a fresh export after adding titles; a repair notice tells you when
    titles are missing.
 
-Add a free [TMDB API key](https://www.themoviedb.org/settings/api) (v3) in the
-same options form for high-resolution posters. Each title is looked up once (by
+A free [TMDB API key](https://www.themoviedb.org/settings/api) (v3) is **required**
+at setup (and can be changed in the options): TMDB gives the covers, French titles,
+box sets, genres, ratings and production countries. A free
+[OMDb API key](https://www.omdbapi.com/apikey.aspx) is **optional**: when set, the
+titles TMDB leaves without rating, genres or countries are asked once to OMDb (IMDb
+data, also used for a missing running time or director). Each title is looked up once (by
 IMDb ID, by title and year, or as a collection for box sets; season discs get
 their season's poster) and the sharpest cover between TMDB and My Movies is shown.
 TMDB also gives the production countries and fills in the genres and ratings the export

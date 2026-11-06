@@ -16,7 +16,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from . import tmdb
+from . import omdb, tmdb
 from .api import (
     BoxSetChild,
     CollectionTitle,
@@ -26,6 +26,7 @@ from .api import (
 )
 from .catalog import CatalogEntry, CatalogStore, normalize_title
 from .const import (
+    CONF_OMDB_API_KEY,
     CONF_TMDB_API_KEY,
     COVER_PATH,
     DOMAIN,
@@ -371,8 +372,55 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
         ]
         return todo
 
+    def _omdb(self, key: str) -> dict[str, Any]:
+        """What OMDb gave for a title or film ({} when not asked or unknown)."""
+        return (self.store.covers.get(key) or {}).get("omdb") or {}
+
+    def _omdb_todo(self, data: MyMoviesData) -> list[tuple[str, dict[str, Any]]]:
+        """Films and series still missing a rating, genres or countries after TMDB.
+
+        Each is asked once to OMDb (by IMDb ID, else by title and year); box sets are
+        left out: their films complete them.
+        """
+        if not self.config_entry.options.get(CONF_OMDB_API_KEY):
+            return []
+        todo = []
+        items: list[tuple[str, CatalogEntry | BoxSetChild]] = [
+            (key, entry) for key, title in data.titles.items() if (entry := self.entry_for(title))
+        ] + [(child.id.lower(), child) for children in data.box_sets.values() for child in children]
+        for key, item in items:
+            cover = self.store.covers.get(key)
+            if cover is None or "omdb" in cover or key in data.box_sets or cover.get("kind") == "collection":
+                continue
+            entry = item if isinstance(item, CatalogEntry) else None
+            if (entry and entry.rating) or cover.get("rating"):
+                if ((entry and entry.genres) or cover.get("genres")) and cover.get("countries"):
+                    continue
+            todo.append((key, {
+                "imdb": entry.imdb if entry else None,
+                "title": item.original_title or item.title,
+                "year": item.year,
+            }))
+        return todo
+
     def _tmdb_missing(self, data: MyMoviesData) -> bool:
-        return bool(self.config_entry.options.get(CONF_TMDB_API_KEY)) and bool(self._tmdb_todo(data))
+        return bool(self.config_entry.options.get(CONF_TMDB_API_KEY)) and bool(
+            self._tmdb_todo(data) or self._omdb_todo(data)
+        )
+
+    async def _async_fetch_omdb(self, session: Any, data: MyMoviesData) -> int:
+        """Complete from OMDb what TMDB left empty; return how many titles were asked."""
+        api_key = self.config_entry.options.get(CONF_OMDB_API_KEY)
+        done = 0
+        try:
+            for key, query in self._omdb_todo(data):
+                self.store.covers[key]["omdb"] = await omdb.async_lookup(session, api_key, **query)
+                done += 1
+        except omdb.OmdbAuthError as err:
+            _LOGGER.warning("OMDb lookups stopped (key refused or daily limit reached): %s", err)
+        except omdb.OmdbError as err:
+            _LOGGER.warning("OMDb lookups stopped: %s", err)
+        return done
 
     async def _async_season_at_release(
         self,
@@ -496,6 +544,8 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
                     self.async_update_listeners()
         except tmdb.TmdbError as err:
             _LOGGER.warning("TMDB lookups stopped: %s", err)
+        else:
+            done += await self._async_fetch_omdb(session, data)
         finally:
             self._fetching = False
             if done:
@@ -619,8 +669,16 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
         # A disc owned as its own title has the export's genres, else TMDB's.
         title = self.data.titles.get(data["title_id"]) if self.data and data["title_id"] else None
         entry = self.entry_for(title) if title else None
-        data["genres"] = (entry.genres if entry else []) or (self.store.covers.get(key) or {}).get("genres", [])
-        data["rating"] = (entry.rating if entry else None) or (self.store.covers.get(key) or {}).get("rating")
+        data["genres"] = (
+            (entry.genres if entry else [])
+            or (self.store.covers.get(key) or {}).get("genres")
+            or self._omdb(key).get("genres", [])
+        )
+        data["rating"] = (
+            (entry.rating if entry else None)
+            or (self.store.covers.get(key) or {}).get("rating")
+            or self._omdb(key).get("rating")
+        )
         self._apply_cover(data, self.cover(key))
         return data
 
@@ -665,9 +723,14 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             if not data["description"]:
                 data["description"] = (self.store.covers.get(key) or {}).get("overview", "")
             data["film_release_date"] = (self.store.covers.get(key) or {}).get("release_date", "")
-            data["countries"] = (self.store.covers.get(key) or {}).get("countries", [])
+            omdb_data = self._omdb(key)  # IMDb data, only for what TMDB left empty
+            data["countries"] = (self.store.covers.get(key) or {}).get("countries") or omdb_data.get("countries", [])
+            data["runtime"] = data["runtime"] or omdb_data.get("runtime")
+            data["director"] = data["director"] or omdb_data.get("director", "")
             # Box sets have no genre in the export: TMDB gives those of their films.
-            data["genres"] = data["genres"] or (self.store.covers.get(key) or {}).get("genres", [])
+            data["genres"] = (
+                data["genres"] or (self.store.covers.get(key) or {}).get("genres") or omdb_data.get("genres", [])
+            )
             data["children"] = [self.describe_child(c) for c in children]
             # A box set TMDB does not know takes the genres of its films.
             data["genres"] = data["genres"] or list(
@@ -679,7 +742,7 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
                 data["rating"] = (
                     round(sum(rated) / len(rated), 1)
                     if rated
-                    else (self.store.covers.get(key) or {}).get("rating")
+                    else (self.store.covers.get(key) or {}).get("rating") or omdb_data.get("rating")
                 )
             data["box_set_id"] = self.data.box_of.get(key) if self.data else None
             self._apply_details(data, key)

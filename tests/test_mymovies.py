@@ -709,3 +709,43 @@ def test_omdb_parse() -> None:
         "runtime": 169, "director": "Christopher Nolan",
     }
     assert omdb.parse({"imdbRating": "N/A", "Runtime": "N/A", "Director": "N/A"})["rating"] is None
+
+
+async def test_omdb_completes_tmdb(hass: HomeAssistant) -> None:
+    """With an OMDb key, titles TMDB leaves incomplete are asked once to OMDb."""
+    from custom_components.mymovies import omdb, tmdb
+
+    titles = [_title(1), _title(2)]
+    catalog = {
+        1: CatalogEntry("Obscur", "Obscure", "Obscur", "tt0000001", 1999),
+        2: CatalogEntry("Complet", "Complete", "Complet", "tt0000002", 2001, rating=7.0, genres=["Drama"]),
+    }
+    entry = await _setup(hass, {"tmdb_api_key": "k", "omdb_api_key": "o"})
+    coordinator = entry.runtime_data
+    coordinator.store.catalog = catalog
+    details = AsyncMock(side_effect=[
+        {"countries": [], "genres": [], "rating": None},
+        {"countries": ["FR"], "genres": [], "rating": None},
+    ])
+    lookup = AsyncMock(return_value={"rating": 6.1, "genres": ["Horror"], "countries": ["GB"], "runtime": 95, "director": "Jane Doe"})
+    with (
+        patch.object(tmdb, "async_find_imdb", AsyncMock(side_effect=lambda *a: tmdb.TmdbMatch("movie", 7))),
+        patch.object(tmdb, "async_details", details),
+        patch.object(tmdb, "async_posters", AsyncMock(return_value=[])),
+        patch.object(omdb, "async_lookup", lookup),
+        patch(f"{CLIENT}.async_get_titles", return_value=titles),
+        patch(f"{CLIENT}.async_get_box_set_children", return_value={}),
+        patch(f"{CLIENT}.async_get_titles_in_box_set", return_value=[]),
+    ):
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        assert lookup.await_count == 1  # the complete title is not asked
+        assert lookup.await_args.kwargs == {"imdb": "tt0000001", "title": "Obscure", "year": 1999}
+        await coordinator.async_refresh()  # asked once only
+        await hass.async_block_till_done()
+        assert lookup.await_count == 1
+    obscure = coordinator.describe(titles[0], details=True)
+    assert (obscure["rating"], obscure["genres"], obscure["countries"]) == (6.1, ["Horror"], ["GB"])
+    assert (obscure["runtime"], obscure["director"]) == (95, "Jane Doe")
+    complete = coordinator.describe(titles[1], details=True)
+    assert (complete["rating"], complete["genres"]) == (7.0, ["Drama"])  # the export wins
