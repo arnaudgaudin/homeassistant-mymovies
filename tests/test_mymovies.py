@@ -370,6 +370,7 @@ async def test_tmdb_lookup(hass: HomeAssistant) -> None:
         patch.object(tmdb, "async_find_imdb", AsyncMock(side_effect=lambda *a: tmdb.TmdbMatch("tv", 2407))),
         patch.object(tmdb, "async_search_movie", AsyncMock(return_value=tmdb.TmdbMatch("movie", 9389, release_date="2006-03-16"))) as search,
         patch.object(tmdb, "async_posters", side_effect=posters),
+        patch.object(tmdb, "async_countries", AsyncMock(return_value=["FR", "GB"])),
         patch(f"{CLIENT}.async_get_titles", return_value=titles),
         patch(f"{CLIENT}.async_get_box_set_children", return_value={}),
         patch(f"{CLIENT}.async_get_titles_in_box_set", return_value=[]),
@@ -382,6 +383,7 @@ async def test_tmdb_lookup(hass: HomeAssistant) -> None:
     assert covers[titles[2].id.lower()]["path"] == "/movie.jpg"
     assert covers[titles[2].id.lower()]["release_date"] == "2006-03-16"
     assert coordinator.describe(titles[2], details=True)["film_release_date"] == "2006-03-16"
+    assert coordinator.describe(titles[2], details=True)["countries"] == ["FR", "GB"]
     assert search.await_args.args[2] == "Renaissance"
 
 
@@ -573,3 +575,20 @@ async def test_series_season_at_disc_release(hass: HomeAssistant) -> None:
         # A series whose every season was out: its series poster is fine.
         coordinator.store.catalog[1].release_date = "2025-06-01"
         assert await coordinator._async_season_at_release(None, "k", tmdb.TmdbMatch("tv", 60715), _title(1), "fr") is None
+
+
+async def test_tmdb_countries() -> None:
+    """Films give their production countries, series their origin, box sets their first film's."""
+    from custom_components.mymovies import tmdb
+
+    replies = {
+        "/movie/1": {"production_countries": [{"iso_3166_1": "US"}, {"iso_3166_1": "GB"}]},
+        "/tv/2": {"production_countries": [], "origin_country": ["FR"]},
+    }
+    get = AsyncMock(side_effect=lambda session, path, params: replies[path])
+    with patch.object(tmdb, "_get", get):
+        assert await tmdb.async_countries(None, "k", tmdb.TmdbMatch("movie", 1), [], "fr") == ["US", "GB"]
+        assert await tmdb.async_countries(None, "k", tmdb.TmdbMatch("tv", 2), [], "fr") == ["FR"]
+        box = tmdb.TmdbMatch("collection", 9)
+        assert await tmdb.async_countries(None, "k", box, [{"id": 1}], "fr") == ["US", "GB"]
+        assert await tmdb.async_countries(None, "k", box, [], "fr") == []

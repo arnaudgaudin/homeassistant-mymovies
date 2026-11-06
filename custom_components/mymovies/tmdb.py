@@ -168,6 +168,20 @@ async def async_movie_collection(
     return (data.get("belongs_to_collection") or {}).get("id")
 
 
+async def async_countries(
+    session: aiohttp.ClientSession, api_key: str, match: TmdbMatch, parts: list[dict[str, Any]], language: str
+) -> list[str]:
+    """Production countries (ISO 3166-1 codes) of a film or series; a collection's come from its first film."""
+    kind, tmdb_id = match.kind, match.id
+    if kind == "collection":
+        if not parts:
+            return []
+        kind, tmdb_id = "movie", parts[0]["id"]
+    data = await _get(session, f"/{kind}/{tmdb_id}", {"api_key": api_key, "language": language})
+    codes = [c["iso_3166_1"] for c in data.get("production_countries") or [] if c.get("iso_3166_1")]
+    return codes or list(data.get("origin_country") or [])
+
+
 async def async_collection_parts(
     session: aiohttp.ClientSession, api_key: str, collection_id: int, language: str
 ) -> list[dict[str, Any]]:

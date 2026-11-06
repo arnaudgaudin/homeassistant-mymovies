@@ -38,7 +38,7 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 # Bumped when what is kept from TMDB changes, so that every title is looked up again once.
-LOOKUP_VERSION = 3
+LOOKUP_VERSION = 4
 
 # The API gives the watched flag of box-set films one by one: read them less often.
 CHILDREN_WATCHED_INTERVAL = timedelta(hours=6)
@@ -455,6 +455,14 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
                     }
                     if match.kind == "collection":
                         found["parts"] = await self._async_box_set_films(session, api_key, match, item, lang)
+                    try:
+                        found["countries"] = await tmdb.async_countries(
+                            session, api_key, match, found.get("parts") or [], lang
+                        )
+                    except tmdb.TmdbAuthError:
+                        raise
+                    except tmdb.TmdbError:
+                        found["countries"] = []  # only the statistics miss it
                     posters = await tmdb.async_posters(session, api_key, match, lang)
                     if best := tmdb.best_poster(posters, lang):
                         found.update(
@@ -618,6 +626,7 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             if not data["description"]:
                 data["description"] = (self.store.covers.get(key) or {}).get("overview", "")
             data["film_release_date"] = (self.store.covers.get(key) or {}).get("release_date", "")
+            data["countries"] = (self.store.covers.get(key) or {}).get("countries", [])
             data["children"] = [self.describe_child(c) for c in children]
             data["box_set_id"] = self.data.box_of.get(key) if self.data else None
         else:
