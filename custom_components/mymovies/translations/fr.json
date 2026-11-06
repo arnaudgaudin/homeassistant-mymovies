@@ -10,6 +10,10 @@
           "password": "Votre mot de passe My Movies."
         }
       },
+      "local": {
+        "title": "My Movies",
+        "description": "Votre collection vient de l'export CSV de l'application My Movies, complété par TMDB. Après l'installation, importez l'export depuis le panneau My Movies (bouton Importer) ou les options de l'intégration."
+      },
       "reauth_confirm": {
         "title": "Nouvelle authentification",
         "description": "My Movies n'accepte plus le mot de passe de {username}. Saisissez le mot de passe actuel.",
@@ -21,7 +25,7 @@
       "cannot_connect": "Impossible de joindre le service My Movies."
     },
     "abort": {
-      "already_configured": "Ce compte est déjà configuré.",
+      "already_configured": "Cette collection est déjà configurée.",
       "reauth_successful": "Nouvelle authentification réussie."
     }
   },
@@ -29,11 +33,11 @@
     "step": {
       "init": {
         "title": "Export de la collection et jaquettes",
-        "description": "L'API My Movies ne fournit pas le nom des titres aux applications tierces. Exportez votre collection depuis l'application My Movies (CSV) et importez-la ici ; ré-importez-la après avoir ajouté des titres. Titres actuellement connus : {count}.",
+        "description": "Exportez votre collection depuis l'application My Movies (CSV) et importez-la ici ; ré-importez-la après avoir ajouté des titres. Titres actuellement connus : {count}.",
         "data": { "export_file": "Export de la collection (CSV)", "tmdb_api_key": "Clé API TMDB" },
         "data_description": {
           "export_file": "Le fichier CSV exporté par l'application My Movies. Laissez vide pour garder l'actuel.",
-          "tmdb_api_key": "Clé API TMDB (v3) gratuite et facultative, pour des jaquettes en haute résolution. Sans elle, les petites miniatures My Movies sont utilisées."
+          "tmdb_api_key": "Clé API TMDB (v3) gratuite et facultative, pour des jaquettes en haute résolution, les genres et les pays de production."
         }
       }
     },

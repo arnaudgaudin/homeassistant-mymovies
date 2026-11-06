@@ -12,6 +12,12 @@ Connect your [My Movies](https://www.mymovies.dk) collection to Home Assistant:
 > It uses the My Movies cloud API with your own account, which is not documented
 > for third parties and may change without notice.
 
+> **My Movies API switched off.** On 2026-11-04 My Movies closed its API to
+> third-party apps. The integration now works from the collection export (CSV) of the
+> My Movies app, completed by TMDB: setup asks for no account, and marking titles as
+> watched (actions and panel buttons) is not offered. The API code is kept and comes
+> back by setting `API_ENABLED = True` in `const.py` if access is granted again.
+
 ## Installation
 
 ### HACS (custom repository)

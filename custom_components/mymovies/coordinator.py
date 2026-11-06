@@ -33,6 +33,7 @@ from .const import (
     THUMBNAIL_PATH,
     TMDB_IMAGE_URL,
     UPDATE_INTERVAL,
+    api_enabled,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -94,6 +95,8 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
         self.offline = False
 
     async def _async_update_data(self) -> MyMoviesData:
+        if not api_enabled():
+            return self._offline_data()
         # The titles first: a refusal there means My Movies closed its API.
         try:
             titles = await self.client.async_get_titles()

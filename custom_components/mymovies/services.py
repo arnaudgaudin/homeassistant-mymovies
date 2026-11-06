@@ -19,7 +19,7 @@ from homeassistant.util import dt as dt_util
 
 from .api import BoxSetChild, CollectionTitle, MyMoviesError
 from .catalog import normalize_title as _norm
-from .const import ATTR_NOTES, ATTR_TITLE, DOMAIN
+from .const import ATTR_NOTES, ATTR_TITLE, DOMAIN, api_enabled
 from .coordinator import MyMoviesConfigEntry
 
 SERVICE_MARK_WATCHED = "mark_watched"
@@ -141,8 +141,10 @@ def async_setup_services(hass: HomeAssistant) -> None:
         titles = sorted(coordinator.data.titles.values(), key=lambda t: t.collection_number)
         return {"titles": [coordinator.describe(t) for t in titles]}
 
-    hass.services.async_register(DOMAIN, SERVICE_MARK_WATCHED, mark_watched, schema=MARK_SCHEMA)
-    hass.services.async_register(DOMAIN, SERVICE_CLEAR_WATCHED, clear_watched, schema=CLEAR_SCHEMA)
+    # Watched writes go through the My Movies API: not offered while it is switched off.
+    if api_enabled():
+        hass.services.async_register(DOMAIN, SERVICE_MARK_WATCHED, mark_watched, schema=MARK_SCHEMA)
+        hass.services.async_register(DOMAIN, SERVICE_CLEAR_WATCHED, clear_watched, schema=CLEAR_SCHEMA)
     hass.services.async_register(
         DOMAIN,
         SERVICE_GET_TITLES,

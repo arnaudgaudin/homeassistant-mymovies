@@ -6,6 +6,17 @@ DOMAIN = "mymovies"
 UPDATE_INTERVAL = timedelta(hours=1)
 STORAGE_VERSION = 1
 
+# My Movies closed its API to third-party apps on 2026-11-04. The API code is kept but
+# switched off: the collection comes from the CSV export and TMDB. Set back to True if
+# My Movies grants access again (sign-in, watched writes and the panel buttons return).
+API_ENABLED = False
+
+
+def api_enabled() -> bool:
+    """Whether the My Movies API is used (read at call time, so tests can switch it)."""
+    return API_ENABLED
+
+
 CONF_EXPORT_FILE = "export_file"
 CONF_TMDB_API_KEY = "tmdb_api_key"
 

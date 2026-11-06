@@ -32,6 +32,13 @@ def no_tmdb_network():
 
 
 @pytest.fixture(autouse=True)
+def api_switched_on():
+    """The API code stays tested while it is switched off in the integration."""
+    with patch("custom_components.mymovies.const.API_ENABLED", True):
+        yield
+
+
+@pytest.fixture(autouse=True)
 def films_not_watched():
     """Box-set films start unwatched (their flag is read one by one)."""
     with patch(f"{CLIENT}.async_get_watched", return_value=False) as mock:
@@ -599,3 +606,31 @@ async def test_tmdb_countries() -> None:
             "countries": ["US", "GB"], "genres": ["Action", "Adventure", "Comedy"]
         }
         assert await tmdb.async_details(None, "k", box, [], "fr") == {"countries": [], "genres": []}
+
+
+async def test_api_switched_off(hass: HomeAssistant, hass_ws_client) -> None:
+    """Without the API: no sign-in, no watched writes, the collection comes from the export."""
+    with (
+        patch("custom_components.mymovies.const.API_ENABLED", False),
+        patch(f"{CLIENT}.async_get_titles") as api,
+        patch("custom_components.mymovies.catalog.CatalogStore.async_load", AsyncMock()),
+    ):
+        result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+        assert result["step_id"] == "local" and not result["data_schema"].schema
+        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+        await hass.async_block_till_done()
+        assert result["type"] is FlowResultType.CREATE_ENTRY and result["data"] == {}
+        entry = hass.config_entries.async_entries(DOMAIN)[0]
+        coordinator = entry.runtime_data
+        coordinator.store.catalog = dict(CATALOG)
+        await coordinator.async_refresh()
+        assert coordinator.offline and len(coordinator.data.titles) == len(CATALOG)
+        assert not hass.services.has_service(DOMAIN, "mark_watched")
+        assert hass.services.has_service(DOMAIN, "get_titles")
+        client = await hass_ws_client(hass)
+        await client.send_json({"id": 1, "type": "mymovies/collection"})
+        assert (await client.receive_json())["result"]["api"] is False
+        # A second collection is refused.
+        again = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
+        assert again["type"] is FlowResultType.ABORT
+    api.assert_not_called()

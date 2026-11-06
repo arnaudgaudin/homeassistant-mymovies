@@ -28,7 +28,7 @@ from homeassistant.helpers.selector import (
 from . import tmdb
 from .api import MyMoviesAuthError, MyMoviesClient, MyMoviesError
 from .catalog import CatalogEntry, CatalogStore, InvalidExportError, read_uploaded_export
-from .const import CONF_EXPORT_FILE, CONF_TMDB_API_KEY, DOMAIN
+from .const import CONF_EXPORT_FILE, CONF_TMDB_API_KEY, DOMAIN, api_enabled
 
 PASSWORD_SELECTOR = TextSelector(
     TextSelectorConfig(type=TextSelectorType.PASSWORD, autocomplete="current-password")
@@ -77,6 +77,8 @@ class MyMoviesConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         """Ask for the account credentials."""
+        if not api_enabled():
+            return await self.async_step_local()
         errors: dict[str, str] = {}
         if user_input is not None:
             user_input[CONF_USERNAME] = user_input[CONF_USERNAME].strip()
@@ -90,6 +92,16 @@ class MyMoviesConfigFlow(ConfigFlow, domain=DOMAIN):
             data_schema=self.add_suggested_values_to_schema(USER_SCHEMA, user_input),
             errors=errors,
         )
+
+    async def async_step_local(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Without the API: one collection, filled from the CSV export after setup."""
+        await self.async_set_unique_id(DOMAIN)
+        self._abort_if_unique_id_configured()
+        if user_input is not None:
+            return self.async_create_entry(title="My Movies", data={})
+        return self.async_show_form(step_id="local", data_schema=vol.Schema({}))
 
     async def async_step_reauth(self, entry_data: Mapping[str, Any]) -> ConfigFlowResult:
         """Start re-authentication when the API rejects the stored password."""

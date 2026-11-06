@@ -10,6 +10,10 @@
           "password": "Your My Movies password."
         }
       },
+      "local": {
+        "title": "My Movies",
+        "description": "Your collection comes from the CSV export of the My Movies app, completed by TMDB. After setup, import the export from the My Movies panel (Import button) or the integration options."
+      },
       "reauth_confirm": {
         "title": "Re-authenticate",
         "description": "My Movies no longer accepts the password for {username}. Enter the current one.",
@@ -21,7 +25,7 @@
       "cannot_connect": "Could not reach the My Movies service."
     },
     "abort": {
-      "already_configured": "This account is already configured.",
+      "already_configured": "This collection is already configured.",
       "reauth_successful": "Re-authentication was successful."
     }
   },
@@ -29,11 +33,11 @@
     "step": {
       "init": {
         "title": "Collection export and covers",
-        "description": "The My Movies API does not give the titles' names to third-party apps. Export your collection from the My Movies app (CSV) and import it here; re-import it after adding titles. Titles currently known: {count}.",
+        "description": "Export your collection from the My Movies app (CSV) and import it here; re-import it after adding titles. Titles currently known: {count}.",
         "data": { "export_file": "Collection export (CSV)", "tmdb_api_key": "TMDB API key" },
         "data_description": {
           "export_file": "The CSV file exported by the My Movies app. Leave empty to keep the current one.",
-          "tmdb_api_key": "Optional free TMDB API key (v3) for high-resolution posters. Without it, the small My Movies thumbnails are used."
+          "tmdb_api_key": "Optional free TMDB API key (v3) for high-resolution posters, genres and production countries."
         }
       }
     },

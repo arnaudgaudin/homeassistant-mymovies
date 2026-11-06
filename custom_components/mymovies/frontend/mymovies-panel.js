@@ -228,6 +228,7 @@ class MyMoviesPanel extends HTMLElement {
     try {
       const result = await this._hass.connection.sendMessagePromise({ type: "mymovies/collection" });
       this._titles = result.titles;
+      this._api = result.api !== false;
       this._error = null;
     } catch (err) {
       this._error = err.message || String(err);
@@ -782,7 +783,7 @@ class MyMoviesPanel extends HTMLElement {
                 </button>`;
               }).join("")}
             </div>` : ""}
-          ${i.editions ? "" : `<div class="actions">
+          ${i.editions || !this._api ? "" : `<div class="actions">
             ${this._dialog.error ? `<span class="error">${esc(t.failed)} : ${esc(this._dialog.error)}</span>` : ""}
             ${i.watched ? `<button class="secondary" data-action="clear" ${this._busy ? "disabled" : ""}>${esc(t.clearWatched)}</button>` : ""}
             <button class="primary" data-action="mark" ${this._busy ? "disabled" : ""}>${esc(t.markWatched)}</button>

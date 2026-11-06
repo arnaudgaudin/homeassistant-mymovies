@@ -43,7 +43,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 async def async_setup_entry(hass: HomeAssistant, entry: MyMoviesConfigEntry) -> bool:
     """Set up one My Movies account."""
     client = MyMoviesClient(
-        async_get_clientsession(hass), entry.data[CONF_USERNAME], entry.data[CONF_PASSWORD]
+        # Without the API (see const.API_ENABLED) the entry has no credentials.
+        async_get_clientsession(hass), entry.data.get(CONF_USERNAME, ""), entry.data.get(CONF_PASSWORD, "")
     )
     store = CatalogStore(hass, entry.entry_id)
     await store.async_load()

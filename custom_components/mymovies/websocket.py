@@ -15,7 +15,7 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from . import tmdb
 from .catalog import InvalidExportError, read_uploaded_export
-from .const import CONF_TMDB_API_KEY, DOMAIN, THUMBNAIL_URL_LIFETIME, TMDB_IMAGE_URL
+from .const import CONF_TMDB_API_KEY, DOMAIN, THUMBNAIL_URL_LIFETIME, TMDB_IMAGE_URL, api_enabled
 from .coordinator import MyMoviesConfigEntry
 from .covers import InvalidImageError, read_upload, remove_upload, save_upload, valid_key
 
@@ -75,7 +75,14 @@ def ws_collection(
         for title in coordinator.data.titles.values()
     ]
     connection.send_result(
-        msg["id"], {"entry_id": entry.entry_id, "account": entry.title, "titles": titles}
+        msg["id"],
+        {
+            "entry_id": entry.entry_id,
+            "account": entry.title,
+            "titles": titles,
+            # Watched writes need the My Movies API.
+            "api": api_enabled() and not coordinator.offline,
+        },
     )
 
 
