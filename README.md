@@ -52,8 +52,9 @@ Add a free [TMDB API key](https://www.themoviedb.org/settings/api) (v3) in the
 same options form for high-resolution posters. Each title is looked up once (by
 IMDb ID, by title and year, or as a collection for box sets; season discs get
 their season's poster) and the sharpest cover between TMDB and My Movies is shown.
-TMDB also gives the production countries and fills in the genres the export leaves
-empty (box sets and the films inside them); titles added by a new import are looked up
+TMDB also gives the production countries and fills in the genres and ratings the export
+leaves empty (box sets and the films inside them; a box set is rated with the average of
+its films); titles added by a new import are looked up
 the same way.
 Without a key, the smaller My Movies covers are used. An administrator can pick
 another cover from the title's dialog: any TMDB poster, the My Movies cover or an

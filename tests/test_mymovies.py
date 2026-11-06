@@ -377,7 +377,7 @@ async def test_tmdb_lookup(hass: HomeAssistant) -> None:
         patch.object(tmdb, "async_find_imdb", AsyncMock(side_effect=lambda *a: tmdb.TmdbMatch("tv", 2407))),
         patch.object(tmdb, "async_search_movie", AsyncMock(return_value=tmdb.TmdbMatch("movie", 9389, release_date="2006-03-16"))) as search,
         patch.object(tmdb, "async_posters", side_effect=posters),
-        patch.object(tmdb, "async_details", AsyncMock(return_value={"countries": ["FR", "GB"], "genres": ["Drama"]})),
+        patch.object(tmdb, "async_details", AsyncMock(return_value={"countries": ["FR", "GB"], "genres": ["Drama"], "rating": 6.9})),
         patch(f"{CLIENT}.async_get_titles", return_value=titles),
         patch(f"{CLIENT}.async_get_box_set_children", return_value={}),
         patch(f"{CLIENT}.async_get_titles_in_box_set", return_value=[]),
@@ -393,6 +393,7 @@ async def test_tmdb_lookup(hass: HomeAssistant) -> None:
     assert coordinator.describe(titles[2], details=True)["countries"] == ["FR", "GB"]
     # The export has no genre for this title: TMDB's are used.
     assert coordinator.describe(titles[2], details=True)["genres"] == ["Drama"]
+    assert coordinator.describe(titles[2], details=True)["rating"] == 6.9
     assert search.await_args.args[2] == "Renaissance"
 
 
@@ -598,21 +599,21 @@ async def test_tmdb_countries() -> None:
     from custom_components.mymovies import tmdb
 
     replies = {
-        "/movie/1": {"production_countries": [{"iso_3166_1": "US"}, {"iso_3166_1": "GB"}], "genres": [{"id": 878}, {"id": 28}]},
+        "/movie/1": {"production_countries": [{"iso_3166_1": "US"}, {"iso_3166_1": "GB"}], "genres": [{"id": 878}, {"id": 28}], "vote_average": 7.456, "vote_count": 900},
         "/tv/2": {"production_countries": [], "origin_country": ["FR"], "genres": [{"id": 10765}]},
     }
     get = AsyncMock(side_effect=lambda session, path, params: replies[path])
     with patch.object(tmdb, "_get", get):
         movie = await tmdb.async_details(None, "k", tmdb.TmdbMatch("movie", 1), [], "fr")
-        assert movie == {"countries": ["US", "GB"], "genres": ["Science-Fiction", "Action"]}
+        assert movie == {"countries": ["US", "GB"], "genres": ["Science-Fiction", "Action"], "rating": 7.5}
         series = await tmdb.async_details(None, "k", tmdb.TmdbMatch("tv", 2), [], "fr")
-        assert series == {"countries": ["FR"], "genres": ["Science-Fiction", "Fantasy"]}
+        assert series == {"countries": ["FR"], "genres": ["Science-Fiction", "Fantasy"], "rating": None}  # no votes
         box = tmdb.TmdbMatch("collection", 9)
         parts = [{"id": 1, "genre_ids": [28, 12]}, {"id": 3, "genre_ids": [28, 35]}]
         assert await tmdb.async_details(None, "k", box, parts, "fr") == {
-            "countries": ["US", "GB"], "genres": ["Action", "Adventure", "Comedy"]
+            "countries": ["US", "GB"], "genres": ["Action", "Adventure", "Comedy"], "rating": None
         }
-        assert await tmdb.async_details(None, "k", box, [], "fr") == {"countries": [], "genres": []}
+        assert await tmdb.async_details(None, "k", box, [], "fr") == {"countries": [], "genres": [], "rating": None}
 
 
 async def test_api_switched_off(hass: HomeAssistant, hass_ws_client) -> None:
@@ -648,8 +649,8 @@ async def test_box_set_genres_from_its_films(hass: HomeAssistant) -> None:
     coordinator = entry.runtime_data
     coordinator.store.catalog = {
         1: CatalogEntry("Saga", "Saga", "Saga", None, 2020),
-        2: CatalogEntry("Film A", "Film A", "Saga 01: Film A", "tt1", 2010, genres=["Action"], box=1, box_order=1),
-        3: CatalogEntry("Film B", "Film B", "Saga 02: Film B", "tt2", 2012, genres=["Action", "Drama"], box=1, box_order=2),
+        2: CatalogEntry("Film A", "Film A", "Saga 01: Film A", "tt1", 2010, rating=7.0, genres=["Action"], box=1, box_order=1),
+        3: CatalogEntry("Film B", "Film B", "Saga 02: Film B", "tt2", 2012, rating=8.5, genres=["Action", "Drama"], box=1, box_order=2),
     }
     with patch(f"{CLIENT}.async_get_titles", side_effect=MyMoviesAuthError("closed")):
         await coordinator.async_refresh()
@@ -657,6 +658,9 @@ async def test_box_set_genres_from_its_films(hass: HomeAssistant) -> None:
     described = coordinator.describe(box, details=True)
     assert [c["genres"] for c in described["children"]] == [["Action"], ["Action", "Drama"]]
     assert described["genres"] == ["Action", "Drama"]
+    # Nor a rating: the average of its films'.
+    assert [c["rating"] for c in described["children"]] == [7.0, 8.5]
+    assert described["rating"] == 7.8
 
 
 async def test_details_chosen_by_hand(hass: HomeAssistant, hass_ws_client) -> None:

@@ -39,7 +39,7 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 # Bumped when what is kept from TMDB changes, so that every title is looked up again once.
-LOOKUP_VERSION = 5
+LOOKUP_VERSION = 6
 
 # The API gives the watched flag of box-set films one by one: read them less often.
 CHILDREN_WATCHED_INTERVAL = timedelta(hours=6)
@@ -201,6 +201,7 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
                         "overview": part["overview"],
                         "release_date": part["release_date"],
                         "genres": tmdb.genre_names(part.get("genre_ids") or []),
+                        "rating": part.get("rating"),
                     }
                 )
                 data.box_sets.setdefault(key, []).append(
@@ -482,7 +483,7 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
                     except tmdb.TmdbAuthError:
                         raise
                     except tmdb.TmdbError:
-                        found |= {"countries": [], "genres": []}
+                        found |= {"countries": [], "genres": [], "rating": None}
                     posters = await tmdb.async_posters(session, api_key, match, lang)
                     if best := tmdb.best_poster(posters, lang):
                         found.update(
@@ -619,6 +620,7 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
         title = self.data.titles.get(data["title_id"]) if self.data and data["title_id"] else None
         entry = self.entry_for(title) if title else None
         data["genres"] = (entry.genres if entry else []) or (self.store.covers.get(key) or {}).get("genres", [])
+        data["rating"] = (entry.rating if entry else None) or (self.store.covers.get(key) or {}).get("rating")
         self._apply_cover(data, self.cover(key))
         return data
 
@@ -671,6 +673,14 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             data["genres"] = data["genres"] or list(
                 dict.fromkeys(g for c in data["children"] for g in c["genres"])
             )
+            # Missing ratings: TMDB's for a film, the average of its films for a box set.
+            if data["rating"] is None:
+                rated = [c["rating"] for c in data["children"] if c["rating"] is not None]
+                data["rating"] = (
+                    round(sum(rated) / len(rated), 1)
+                    if rated
+                    else (self.store.covers.get(key) or {}).get("rating")
+                )
             data["box_set_id"] = self.data.box_of.get(key) if self.data else None
             self._apply_details(data, key)
         else:

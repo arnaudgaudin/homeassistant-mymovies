@@ -179,6 +179,11 @@ GENRES = {
 }
 
 
+def rating(item: dict[str, Any]) -> float | None:
+    """TMDB users' average rating out of 10, when anyone voted."""
+    return round(item["vote_average"], 1) if item.get("vote_count") and item.get("vote_average") else None
+
+
 def genre_names(ids: list[int]) -> list[str]:
     """My Movies genre names of TMDB genre IDs, in order and without repeats."""
     return list(dict.fromkeys(name for i in ids for name in GENRES.get(i, [])))
@@ -187,21 +192,26 @@ def genre_names(ids: list[int]) -> list[str]:
 async def async_details(
     session: aiohttp.ClientSession, api_key: str, match: TmdbMatch, parts: list[dict[str, Any]], language: str
 ) -> dict[str, list[str]]:
-    """Production countries (ISO 3166-1 codes) and genres of a film or series.
+    """Production countries (ISO 3166-1 codes), genres and rating of a film or series.
 
-    A collection takes the genres of all its films and the countries of the first one.
+    A collection takes the genres of all its films and the countries of the first one;
+    its rating is left to its films.
     """
     kind, tmdb_id, genres = match.kind, match.id, None
     if kind == "collection":
         if not parts:
-            return {"countries": [], "genres": []}
+            return {"countries": [], "genres": [], "rating": None}
         genres = genre_names([g for p in parts for g in p.get("genre_ids") or []])
         kind, tmdb_id = "movie", parts[0]["id"]
     data = await _get(session, f"/{kind}/{tmdb_id}", {"api_key": api_key, "language": language})
     codes = [c["iso_3166_1"] for c in data.get("production_countries") or [] if c.get("iso_3166_1")]
     if genres is None:
         genres = genre_names([g["id"] for g in data.get("genres") or [] if "id" in g])
-    return {"countries": codes or list(data.get("origin_country") or []), "genres": genres}
+    return {
+        "countries": codes or list(data.get("origin_country") or []),
+        "genres": genres,
+        "rating": None if match.kind == "collection" else rating(data),
+    }
 
 
 async def async_collection_parts(
@@ -222,6 +232,7 @@ async def async_collection_parts(
                 "poster": part.get("poster_path") or "",
                 "overview": part.get("overview") or "",
                 "genre_ids": part.get("genre_ids") or [],
+                "rating": rating(part),
             }
         )
     return sorted(parts, key=lambda p: p["release_date"] or "9999")
