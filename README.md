@@ -98,7 +98,8 @@ of covers and offers:
   disc (4K, Blu-ray, DVD, 3D),
   a production year range with two handles
   and a Watched / All / Not watched switch;
-- editions of the same film (same IMDb ID) share one tile; its dialog lists them;
+- editions of the same film (same IMDb ID) share one tile and its dialog lists them,
+  or, with **Editions: Expanded**, get one tile each with their disc and edition;
 - a ✓ badge on watched titles, including films inside box sets;
 - **Expand box sets**: show the films of each box set instead of the box set itself;
 - a details dialog (synopsis, director, cast, genres, runtime, ratings, dates,

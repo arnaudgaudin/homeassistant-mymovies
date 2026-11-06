@@ -11,7 +11,7 @@ const STRINGS = {
     search: "Title, director, actor…", ascending: "Ascending", descending: "Descending",
     allTypes: "All types", allGenres: "All genres", allDiscs: "All discs", threeD: "Blu-ray 3D", movies: "Movies", series: "TV series", documentaries: "Documentaries",
     segWatched: "Watched", segAll: "All", segUnwatched: "Not watched", watchedFilter: "Watched filter",
-    boxSets: "Box sets", collapsed: "Grouped", expanded: "Expanded", refresh: "Refresh", titles: "titles", films: "films",
+    boxSets: "Box sets", editionsLabel: "Editions", collapsed: "Grouped", expanded: "Expanded", refresh: "Refresh", titles: "titles", films: "films",
     grid: "Wall", list: "List", view: "View",
     boxSet: "Box set", markWatched: "Mark as watched", clearWatched: "Clear watched",
     close: "Close", director: "Director", cast: "Cast", genres: "Genres", runtime: "Runtime",
@@ -50,7 +50,7 @@ const STRINGS = {
     search: "Titre, réalisateur, acteur…", ascending: "Croissant", descending: "Décroissant",
     allTypes: "Tous les types", allGenres: "Tous les genres", allDiscs: "Tous les supports", threeD: "Blu-ray 3D", movies: "Films", series: "Séries", documentaries: "Documentaires",
     segWatched: "Vus", segAll: "Tous", segUnwatched: "Non vus", watchedFilter: "Filtre vu",
-    boxSets: "Coffrets", collapsed: "Repliés", expanded: "Dépliés", refresh: "Actualiser", titles: "titres", films: "films",
+    boxSets: "Coffrets", editionsLabel: "Éditions", collapsed: "Repliés", expanded: "Dépliés", refresh: "Actualiser", titles: "titres", films: "films",
     grid: "Mur", list: "Liste", view: "Affichage",
     boxSet: "Coffret", markWatched: "Marquer comme vu", clearWatched: "Effacer le « vu »",
     close: "Fermer", director: "Réalisation", cast: "Avec", genres: "Genres", runtime: "Durée",
@@ -173,7 +173,7 @@ const norm = (value) =>
   String(value ?? "").normalize("NFKD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
 function loadState() {
-  const defaults = { sort: "title", dir: "asc", type: "all", genre: "all", classif: "all", yearFrom: null, yearTo: null, disc: "all", watched: "all", expand: false, view: "grid", q: "" };
+  const defaults = { sort: "title", dir: "asc", type: "all", genre: "all", classif: "all", yearFrom: null, yearTo: null, disc: "all", watched: "all", expand: false, editions: "collapsed", view: "grid", q: "" };
   try {
     return { ...defaults, ...JSON.parse(localStorage.getItem(STATE_KEY) || "{}"), q: "" };
   } catch (err) {
@@ -382,7 +382,9 @@ class MyMoviesPanel extends HTMLElement {
       }
       return true;
     });
+    // Editions of a film share a tile, or are shown one by one with their disc on the tile.
     const grouped = this._groupEditions(items);
+    if (st.editions === "expanded") grouped.splice(0, grouped.length, ...grouped.flatMap((g) => g.editions?.map((e) => ({ ...e, editionTag: true })) || [g]));
     const sign = st.dir === "desc" ? -1 : 1;
     grouped.sort((a, b) => {
       const va = getKey(a);
@@ -505,6 +507,9 @@ class MyMoviesPanel extends HTMLElement {
         <div class="segmented" id="expand" role="radiogroup" aria-label="${esc(t.boxSets)}">
           <span class="seg-label">${esc(t.boxSets)}</span>${seg("expand", "collapsed", esc(t.collapsed), st.expand ? "expanded" : "collapsed")}${seg("expand", "expanded", esc(t.expanded), st.expand ? "expanded" : "collapsed")}
         </div>
+        <div class="segmented" id="editions" role="radiogroup" aria-label="${esc(t.editionsLabel)}">
+          <span class="seg-label">${esc(t.editionsLabel)}</span>${seg("editions", "collapsed", esc(t.collapsed), st.editions)}${seg("editions", "expanded", esc(t.expanded), st.editions)}
+        </div>
         <button type="button" class="secondary small filters-reset" id="filters-reset">${esc(t.resetFilters)}</button>
         </div>
       </div>
@@ -577,6 +582,7 @@ class MyMoviesPanel extends HTMLElement {
     segmented("watched", "watched");
     segmented("view", "view");
     segmented("expand", "expand", (value) => value === "expanded");
+    segmented("editions", "editions");
     $("dir").addEventListener("click", (ev) => {
       update({ dir: this._state.dir === "asc" ? "desc" : "asc" });
       const btn = ev.currentTarget;
@@ -626,7 +632,7 @@ class MyMoviesPanel extends HTMLElement {
       <button class="card" data-key="${esc(i.key)}" title="${esc(title)}">
         <div class="poster">${this._cover(i, title)}${this._tag(i)}</div>
         <div class="name">${esc(title)}</div>
-        <div class="sub">${esc(i.year || "")}</div>
+        <div class="sub">${esc([...new Set([i.year, i.editionTag && (i.three_d ? "3D" : i.disc_type), i.editionTag && i.edition].filter(Boolean))].join(" · "))}</div>
       </button>`;
   }
 
