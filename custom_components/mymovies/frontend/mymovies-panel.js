@@ -13,7 +13,8 @@ const STRINGS = {
     segWatched: "Watched", segAll: "All", segUnwatched: "Not watched", watchedFilter: "Watched filter",
     boxSets: "Box sets", editionsLabel: "Editions", collapsed: "Grouped", expanded: "Expanded", refresh: "Refresh", titles: "titles", films: "films",
     grid: "Wall", list: "List", view: "View",
-    viewings: "Watched on",
+    viewings: "Watched on", chooseGenres: "Choose genres", editGenres: "Edit genres", genresTitle: "Genres of this title",
+    genresHint: "The export and TMDB give no genre for this title: choose them here.", save: "Save", resetChoice: "Remove my choice",
     boxSet: "Box set", markWatched: "Mark as watched", clearWatched: "Clear watched",
     close: "Close", director: "Director", cast: "Cast", genres: "Genres", runtime: "Runtime",
     rating: "Rating", personalRating: "Personal rating", parental: "Parental rating",
@@ -53,7 +54,8 @@ const STRINGS = {
     segWatched: "Vus", segAll: "Tous", segUnwatched: "Non vus", watchedFilter: "Filtre vu",
     boxSets: "Coffrets", editionsLabel: "Éditions", collapsed: "Repliés", expanded: "Dépliés", refresh: "Actualiser", titles: "titres", films: "films",
     grid: "Mur", list: "Liste", view: "Affichage",
-    viewings: "Vu le",
+    viewings: "Vu le", chooseGenres: "Choisir les genres", editGenres: "Modifier les genres", genresTitle: "Genres de ce titre",
+    genresHint: "Ni l'export ni TMDB ne donnent de genre pour ce titre : choisis-les ici.", save: "Enregistrer", resetChoice: "Retirer mon choix",
     boxSet: "Coffret", markWatched: "Marquer comme vu", clearWatched: "Effacer le « vu »",
     close: "Fermer", director: "Réalisation", cast: "Avec", genres: "Genres", runtime: "Durée",
     rating: "Note", personalRating: "Note personnelle", parental: "Classification",
@@ -717,7 +719,7 @@ class MyMoviesPanel extends HTMLElement {
 
   _renderDialog(animate) {
     const root = this.shadowRoot.getElementById("dialog");
-    const bodies = { stats: () => this._statsBody(), import: () => this._importBody(), cover: () => this._coverBody(), title: () => this._titleBody() };
+    const bodies = { genres: () => this._genresBody(), stats: () => this._statsBody(), import: () => this._importBody(), cover: () => this._coverBody(), title: () => this._titleBody() };
     const body = bodies[this._dialog.kind]();
     if (body === null) return this._closeDialog();
     root.innerHTML = `
@@ -747,6 +749,8 @@ class MyMoviesPanel extends HTMLElement {
           ${i.original_title && i.original_title !== title ? `<div class="original">${esc(i.original_title)}</div>` : ""}
           <div class="meta">${meta.map(esc).join(" · ")}</div>
           ${i.genres?.length ? `<div class="chips">${i.genres.map((g) => `<span>${esc(this._genre(g))}</span>`).join("")}</div>` : ""}
+          ${this._hass.user?.is_admin && !i.editions && (!i.genres?.length || i.genres_manual)
+            ? `<button class="secondary small genres-edit" data-action="choose-genres">${esc(i.genres?.length ? t.editGenres : t.chooseGenres)}</button>` : ""}
           ${i.description ? `<p class="description">${esc(paragraphs(i.description))}</p>` : ""}
           <div class="info-rows">
             ${this._info(t.director, i.director)}
@@ -1002,6 +1006,29 @@ class MyMoviesPanel extends HTMLElement {
       <div class="col" title="${esc(label)} : ${v}"><span class="val">${v || ""}</span><span class="bar" style="height:${(v / max) * 100}%"></span><span class="lbl">${esc(label)}</span></div>`).join("")}</div>`;
   }
 
+  _genresBody() {
+    const t = this._t;
+    const d = this._dialog;
+    // The genres of My Movies (one name per genre), sorted by their displayed name.
+    const names = Object.keys(GENRES_FR).filter((g) => !GENRE_ALIASES[g]);
+    names.sort((a, b) => this._genre(a).localeCompare(this._genre(b), this._lang));
+    return `
+      <div class="import-body">
+        <h2>${esc(t.genresTitle)}</h2>
+        <div class="meta">${esc(d.title || "")}</div>
+        <p class="hint">${esc(t.genresHint)}</p>
+        <div class="genre-choices">
+          ${names.map((g) => `<label><input type="checkbox" value="${esc(g)}" ${d.chosen.includes(g) ? "checked" : ""} ${this._busy ? "disabled" : ""} /> ${esc(this._genre(g))}</label>`).join("")}
+        </div>
+        <div class="actions">
+          ${d.error ? `<span class="error">${esc(t.failed)} : ${esc(d.error)}</span>` : ""}
+          <button class="secondary" data-action="back">${esc(t.back)}</button>
+          ${d.chosen.length ? `<button class="secondary" data-action="reset-genres" ${this._busy ? "disabled" : ""}>${esc(t.resetChoice)}</button>` : ""}
+          <button class="primary" data-action="save-genres" ${this._busy ? "disabled" : ""}>${esc(t.save)}</button>
+        </div>
+      </div>`;
+  }
+
   _importBody() {
     const t = this._t;
     const d = this._dialog;
@@ -1035,6 +1062,30 @@ class MyMoviesPanel extends HTMLElement {
       return this._renderDialog(false);
     }
     if (action === "change-cover") return this._openCoverDialog();
+    if (action === "choose-genres") {
+      const item = this._findItem(this._dialog.key);
+      this._dialog = { kind: "genres", id: item.id, title: item.title, back: this._dialog.key, chosen: item.genres_manual ? [...item.genres] : [], error: null };
+      return this._renderDialog(false);
+    }
+    if (action === "save-genres" || action === "reset-genres") {
+      const d = this._dialog;
+      const genres = action === "save-genres"
+        ? [...this.shadowRoot.querySelectorAll(".genre-choices input:checked")].map((el) => el.value)
+        : [];
+      this._busy = true;
+      this._renderDialog(false);
+      try {
+        await this._hass.connection.sendMessagePromise({ type: "mymovies/set_details", title_id: d.id, genres });
+        await this._load();
+        this._dialog = { kind: "title", key: d.back, error: null };
+      } catch (err) {
+        d.error = err.message || String(err);
+      } finally {
+        this._busy = false;
+        if (this._dialog) this._renderDialog(false);
+      }
+      return;
+    }
     if (action === "back") {
       this._dialog = { kind: "title", key: this._dialog.back, error: null };
       return this._renderDialog(false);
@@ -1191,6 +1242,9 @@ const STYLE = `
   .original { font-style: italic; color: var(--secondary-text-color); margin-bottom: 4px; }
   .meta { color: var(--secondary-text-color); font-size: 14px; margin-bottom: 8px; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .genres-edit { margin: -4px 0 12px; }
+  .genre-choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px 12px; margin: 12px 0; }
+  .genre-choices label { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; }
   .chips span { padding: 2px 10px; border-radius: 12px; font-size: 12px; background: rgba(127, 127, 127, 0.18); }
   .description { line-height: 1.5; margin: 0 0 12px; white-space: pre-line; }
   .info-rows { display: grid; gap: 4px; margin-bottom: 12px; font-size: 14px; }

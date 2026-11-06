@@ -614,12 +614,21 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             "title_id": self.data.child_titles.get(key) if self.data else None,
         }
         data["viewings"] = (self.store.viewings.get(data["title_id"] or key) or {}).get("dates", [])
+        self._apply_details(data, key)
         # A disc owned as its own title has the export's genres, else TMDB's.
         title = self.data.titles.get(data["title_id"]) if self.data and data["title_id"] else None
         entry = self.entry_for(title) if title else None
         data["genres"] = (entry.genres if entry else []) or (self.store.covers.get(key) or {}).get("genres", [])
         self._apply_cover(data, self.cover(key))
         return data
+
+    def _apply_details(self, data: dict[str, Any], key: str) -> None:
+        """Genres and countries chosen by the user win over the export's and TMDB's."""
+        chosen = self.store.details.get(key) or {}
+        for name in ("genres", "countries"):
+            data[f"{name}_manual"] = bool(chosen.get(name))
+            if chosen.get(name):
+                data[name] = chosen[name]
 
     def _child_watched(self, child: BoxSetChild) -> bool:
         """A box-set film owned as its own title is watched when that title is."""
@@ -663,6 +672,7 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
                 dict.fromkeys(g for c in data["children"] for g in c["genres"])
             )
             data["box_set_id"] = self.data.box_of.get(key) if self.data else None
+            self._apply_details(data, key)
         else:
             data.pop("_sign")
             data.pop("cover")

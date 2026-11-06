@@ -657,3 +657,24 @@ async def test_box_set_genres_from_its_films(hass: HomeAssistant) -> None:
     described = coordinator.describe(box, details=True)
     assert [c["genres"] for c in described["children"]] == [["Action"], ["Action", "Drama"]]
     assert described["genres"] == ["Action", "Drama"]
+
+
+async def test_details_chosen_by_hand(hass: HomeAssistant, hass_ws_client) -> None:
+    """Genres and countries chosen in the panel win, and an empty list goes back."""
+    entry = await _setup(hass)
+    coordinator = entry.runtime_data
+    title = TITLES[0]
+    client = await hass_ws_client(hass)
+
+    async def send(**data):
+        await client.send_json_auto_id({"type": "mymovies/set_details", "title_id": title.id, **data})
+        return await client.receive_json()
+
+    assert (await send(genres=["Action", "Adventure", "Action"], countries=["gb", "us"]))["success"]
+    described = coordinator.describe(coordinator.data.titles[title.id.lower()], details=True)
+    assert described["genres"] == ["Action", "Adventure"] and described["genres_manual"]
+    assert described["countries"] == ["GB", "US"]
+    assert not (await send(countries=["GBR"]))["success"]  # not an ISO code
+    assert (await send(genres=[], countries=[]))["success"]
+    assert title.id.lower() not in coordinator.store.details
+    assert not (await send(genres=["Action"], title_id="nope"))["success"]

@@ -181,6 +181,8 @@ class CatalogStore:
     viewings: lower-case title or film ID -> watched state kept in Home Assistant
         ({"watched": bool, "dates": [ISO date-time of each viewing]}); it wins over
         the export's Watched column.
+    details: lower-case title or film ID -> details chosen by the user when the export
+        and TMDB have none ({"genres": [My Movies genre names], "countries": [ISO codes]}).
     """
 
     def __init__(self, hass: HomeAssistant, entry_id: str) -> None:
@@ -189,6 +191,7 @@ class CatalogStore:
         self.covers: dict[str, dict] = {}
         self.overrides: dict[str, dict] = {}
         self.viewings: dict[str, dict] = {}
+        self.details: dict[str, dict] = {}
 
     async def async_load(self) -> None:
         data = await self._store.async_load() or {}
@@ -196,6 +199,7 @@ class CatalogStore:
         self.covers = data.get("covers", {})
         self.overrides = data.get("overrides", {})
         self.viewings = data.get("viewings", {})
+        self.details = data.get("details", {})
 
     async def async_save(self) -> None:
         await self._store.async_save(
@@ -204,6 +208,7 @@ class CatalogStore:
                 "covers": self.covers,
                 "overrides": self.overrides,
                 "viewings": self.viewings,
+                "details": self.details,
             }
         )
 

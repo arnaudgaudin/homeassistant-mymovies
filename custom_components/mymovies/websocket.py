@@ -29,6 +29,7 @@ def async_setup_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_import_export)
     websocket_api.async_register_command(hass, ws_cover_choices)
     websocket_api.async_register_command(hass, ws_set_cover)
+    websocket_api.async_register_command(hass, ws_set_details)
 
 
 def _sign(hass: HomeAssistant, connection: websocket_api.ActiveConnection, path: str) -> str:
@@ -214,6 +215,46 @@ async def ws_set_cover(
             return
     if previous.get("source") == "upload" and store.overrides.get(key, {}).get("file") != previous.get("file"):
         await hass.async_add_executor_job(remove_upload, hass, previous["file"])
+    await store.async_save()
+    entry.runtime_data.async_update_listeners()
+    connection.send_result(msg["id"], {})
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "mymovies/set_details",
+        vol.Required("title_id"): str,
+        # An empty list goes back to the export's or TMDB's values.
+        vol.Optional("genres"): [vol.All(str, vol.Length(min=1, max=40))],
+        vol.Optional("countries"): [vol.All(str, vol.Match(r"^[A-Za-z]{2}$"))],
+        vol.Optional("entry_id"): str,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+async def ws_set_details(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Choose the genres or production countries of a title the export and TMDB leave empty."""
+    entry = _loaded_entry(hass, msg.get("entry_id"))
+    key = msg["title_id"].lower()
+    if entry is None or not _known(entry, key):
+        connection.send_error(msg["id"], websocket_api.ERR_NOT_FOUND, "Unknown title")
+        return
+    store = entry.runtime_data.store
+    chosen = dict(store.details.get(key) or {})
+    for name, values in (("genres", msg.get("genres")), ("countries", msg.get("countries"))):
+        if values is None:
+            continue
+        values = list(dict.fromkeys(v.upper() if name == "countries" else v.strip() for v in values))
+        if values:
+            chosen[name] = values
+        else:
+            chosen.pop(name, None)
+    if chosen:
+        store.details[key] = chosen
+    else:
+        store.details.pop(key, None)
     await store.async_save()
     entry.runtime_data.async_update_listeners()
     connection.send_result(msg["id"], {})
