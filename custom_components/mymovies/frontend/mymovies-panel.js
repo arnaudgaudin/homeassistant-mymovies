@@ -24,7 +24,7 @@ const STRINGS = {
     creditCollection: "Collection data", creditCovers: "Covers",
     tmdbNotice: "This product uses the TMDB API but is not endorsed or certified by TMDB.",
     unofficial: "Unofficial integration, not affiliated with or endorsed by My Movies.",
-    years: "Years",
+    years: "Years", filters: "Filters", resetFilters: "Reset filters",
     allAges: "Any age", allAudiences: "All audiences", forAge: "For a {n}-year-old",
     editions: "editions", editionsTitle: "Editions in the collection",
     changeCover: "Change cover", coverTitle: "Choose the cover", coverAuto: "Automatic (best resolution)",
@@ -60,7 +60,7 @@ const STRINGS = {
     creditCollection: "Données de la collection", creditCovers: "Jaquettes",
     tmdbNotice: "Ce produit utilise l'API TMDB mais n'est ni approuvé ni certifié par TMDB.",
     unofficial: "Intégration non officielle, ni affiliée à My Movies ni approuvée par My Movies.",
-    years: "Années",
+    years: "Années", filters: "Filtres", resetFilters: "Réinitialiser les filtres",
     allAges: "Tous les âges", allAudiences: "Tout public", forAge: "Pour un enfant de {n} ans",
     editions: "éditions", editionsTitle: "Éditions dans la collection",
     changeCover: "Changer la jaquette", coverTitle: "Choisir la jaquette", coverAuto: "Automatique (meilleure résolution)",
@@ -128,6 +128,7 @@ const CHECK = icon("M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z");
 const SORT_ICON = icon("M7 4v13H4l4 4 4-4H9V4zm7 0-4 4h3v13h2V8h3z");
 const REFRESH = icon("M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4z");
 const UPLOAD = icon("M9 16v-6H5l7-7 7 7h-4v6zm-4 4v-2h14v2z");
+const FILTER = icon("M6 13h12v-2H6zM3 6v2h18V6zm7 12h4v-2h-4z");
 const GRID = icon("M3 11h8V3H3zm0 10h8v-8H3zm10 0h8v-8h-8zm0-18v8h8V3z");
 const LIST = icon("M9 5v4h12V5zM4 9h4V5H4zm5 10h12v-4H9zm-5 0h4v-4H4zm5-5h12v-4H9zm-5 0h4v-4H4z");
 
@@ -222,6 +223,13 @@ class MyMoviesPanel extends HTMLElement {
     select.innerHTML = ["all", ...genres]
       .map((g) => `<option value="${esc(g)}" ${this._state.genre === g ? "selected" : ""}>${esc(g === "all" ? this._t.allGenres : this._genre(g))}</option>`)
       .join("");
+  }
+
+  _activeFilters() {
+    // Filters narrowing the collection (sort, view and box sets are not filters).
+    const st = this._state;
+    return [st.type, st.genre, st.age, st.disc, st.watched].filter((v) => v !== "all").length
+      + (st.yearFrom != null || st.yearTo != null ? 1 : 0);
   }
 
   _renderYears() {
@@ -430,7 +438,16 @@ class MyMoviesPanel extends HTMLElement {
         <button class="icon" id="refresh" title="${esc(t.refresh)}" aria-label="${esc(t.refresh)}">${REFRESH}</button>
       </div>
       <div class="toolbar">
-        <input id="q" type="search" placeholder="${esc(t.search)}" aria-label="${esc(t.search)}" />
+        <div class="toolbar-main">
+          <input id="q" type="search" placeholder="${esc(t.search)}" aria-label="${esc(t.search)}" value="${esc(st.q)}" />
+          <button type="button" class="filters-toggle" id="filters-toggle" aria-controls="filters" aria-expanded="${this._filtersOpen ? "true" : "false"}">
+            ${FILTER}<span>${esc(t.filters)}</span><span class="filters-count" id="filters-count"></span>
+          </button>
+          <div class="segmented icons" id="view" role="radiogroup" aria-label="${esc(t.view)}">
+            ${seg("view", "grid", GRID, st.view, `title="${esc(t.grid)}" aria-label="${esc(t.grid)}"`)}${seg("view", "list", LIST, st.view, `title="${esc(t.list)}" aria-label="${esc(t.list)}"`)}
+          </div>
+        </div>
+        <div class="filters ${this._filtersOpen ? "open" : ""}" id="filters">
         <div class="sortgroup">
           <span class="select"><select id="sort" aria-label="${esc(t.sort.title)}">${sortOptions}</select></span>
           <button class="icon dir ${st.dir}" id="dir" title="${esc(st.dir === "asc" ? t.ascending : t.descending)}" aria-label="${esc(st.dir === "asc" ? t.ascending : t.descending)}">${SORT_ICON}</button>
@@ -440,7 +457,7 @@ class MyMoviesPanel extends HTMLElement {
           ${option("series", t.series, st.type)}${option("documentaries", t.documentaries, st.type)}
         </select></span>
         <span class="select"><select id="genre" aria-label="${esc(t.allGenres)}">${option("all", t.allGenres, "all")}</select></span>
-        <span class="select"><select id="age" aria-label="${esc(t.allAges)}">
+        <span class="select wide"><select id="age" aria-label="${esc(t.allAges)}">
           ${option("all", t.allAges, st.age)}${option("0", t.allAudiences, st.age)}
           ${AGES.slice(1).map((n) => option(n, t.forAge.replace("{n}", n), st.age)).join("")}
         </select></span>
@@ -453,15 +470,14 @@ class MyMoviesPanel extends HTMLElement {
             <input type="range" id="year-to" aria-label="${esc(t.years)} max" />
           </div>
         </div>
-        <span class="select"><select id="disc" aria-label="${esc(t.allDiscs)}">${option("all", t.allDiscs, "all")}</select></span>
+        <span class="select wide"><select id="disc" aria-label="${esc(t.allDiscs)}">${option("all", t.allDiscs, "all")}</select></span>
         <div class="segmented" id="watched" role="radiogroup" aria-label="${esc(t.watchedFilter)}">
           ${seg("watched", "watched", esc(t.segWatched), st.watched)}${seg("watched", "all", esc(t.segAll), st.watched)}${seg("watched", "unwatched", esc(t.segUnwatched), st.watched)}
         </div>
         <div class="segmented" id="expand" role="radiogroup" aria-label="${esc(t.boxSets)}">
           <span class="seg-label">${esc(t.boxSets)}</span>${seg("expand", "collapsed", esc(t.collapsed), st.expand ? "expanded" : "collapsed")}${seg("expand", "expanded", esc(t.expanded), st.expand ? "expanded" : "collapsed")}
         </div>
-        <div class="segmented icons" id="view" role="radiogroup" aria-label="${esc(t.view)}">
-          ${seg("view", "grid", GRID, st.view, `title="${esc(t.grid)}" aria-label="${esc(t.grid)}"`)}${seg("view", "list", LIST, st.view, `title="${esc(t.list)}" aria-label="${esc(t.list)}"`)}
+        <button type="button" class="secondary small filters-reset" id="filters-reset">${esc(t.resetFilters)}</button>
         </div>
       </div>
       <div class="items ${st.view}" id="grid"><div class="message">${esc(t.loading)}</div></div>
@@ -494,6 +510,20 @@ class MyMoviesPanel extends HTMLElement {
         update({ [attr]: toState(btn.dataset[attr]) });
       });
     $("q").addEventListener("input", (ev) => update({ q: ev.target.value }));
+    $("filters-toggle").addEventListener("click", () => {
+      this._filtersOpen = !this._filtersOpen;
+      $("filters").classList.toggle("open", this._filtersOpen);
+      $("filters-toggle").setAttribute("aria-expanded", String(this._filtersOpen));
+    });
+    $("filters-reset").addEventListener("click", () => {
+      Object.assign(this._state, { type: "all", genre: "all", age: "all", disc: "all", watched: "all", yearFrom: null, yearTo: null });
+      this._saveState();
+      this._renderShell();
+      this._renderDiscOptions();
+      this._renderGenreOptions();
+      this._renderYears();
+      this._renderGrid();
+    });
     $("sort").addEventListener("change", (ev) => update({ sort: ev.target.value }));
     $("type").addEventListener("change", (ev) => update({ type: ev.target.value }));
     $("disc").addEventListener("change", (ev) => update({ disc: ev.target.value }));
@@ -607,6 +637,10 @@ class MyMoviesPanel extends HTMLElement {
     if (!this._titles) return;
     const items = this._visibleItems();
     count.textContent = `${items.length} ${this._t.titles}`;
+    const active = this._activeFilters();
+    const badge = this.shadowRoot.getElementById("filters-count");
+    badge.textContent = active ? String(active) : "";
+    badge.hidden = !active;
     const render = this._state.view === "list" ? (i) => this._row(i) : (i) => this._card(i);
     grid.innerHTML = items.length ? items.map(render).join("") : `<div class="message">${esc(this._t.empty)}</div>`;
   }
@@ -892,6 +926,14 @@ const STYLE = `
   .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 12px 16px; }
   .toolbar input[type="search"], .toolbar select { height: 36px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--divider-color); background: var(--card-background-color); color: var(--primary-text-color); font-size: 14px; box-sizing: border-box; }
   .toolbar input[type="search"] { flex: 0 1 260px; min-width: 140px; }
+  .toolbar-main, .filters { display: contents; }
+  .filters-toggle, .filters-reset { display: none; }
+  #view { order: 99; }
+  .filters-toggle { align-items: center; gap: 6px; height: 36px; padding: 0 12px; border: 1px solid var(--divider-color); border-radius: 8px; background: var(--card-background-color); cursor: pointer; flex: none; font-size: 14px; }
+  .filters-toggle[aria-expanded="true"] { border-color: var(--primary-color); color: var(--primary-color); }
+  .filters-toggle svg { width: 18px; height: 18px; }
+  .filters-count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--primary-color); color: var(--text-primary-color, #fff); font-size: 11px; line-height: 18px; text-align: center; box-sizing: border-box; }
+  .filters-count[hidden] { display: none; }
   /* Own chevron: the native arrow of macOS sits against the border. */
   .select { position: relative; display: inline-flex; flex: none; }
   .select::after { content: ""; position: absolute; right: 10px; top: 50%; width: 18px; height: 18px; margin-top: -9px; pointer-events: none; background: var(--secondary-text-color);
@@ -1009,8 +1051,20 @@ const STYLE = `
   @media (max-width: 600px) {
     .items { padding: 0 12px 16px; }
     .items.grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px; }
-    .toolbar input[type="search"] { flex: 1 1 100%; }
-    .segmented.icons { margin-left: 0; }
+    .toolbar { padding: 8px 12px; gap: 8px; }
+    .toolbar-main { display: flex; align-items: center; gap: 8px; width: 100%; }
+    .toolbar-main input[type="search"] { flex: 1 1 auto; min-width: 0; }
+    .filters-toggle { display: inline-flex; }
+    #view { margin-left: 0; }
+    .filters { display: none; width: 100%; grid-template-columns: 1fr 1fr; gap: 8px; padding-bottom: 4px; }
+    .filters.open { display: grid; }
+    .filters .select, .filters .select select { width: 100%; min-width: 0; }
+    .filters .sortgroup, .filters .years, .filters .segmented, .filters .select.wide, .filters-reset { grid-column: 1 / -1; }
+    .filters .sortgroup .select { flex: 1; }
+    .filters .years { width: 100%; min-width: 0; }
+    .filters .segmented { display: flex; }
+    .filters .segmented button { flex: 1; }
+    .filters-reset { display: block; justify-self: end; }
     .side { display: none; }
     .body { flex-direction: column; padding: 16px; }
     .cover-col { flex-basis: auto; width: 160px; align-self: center; }
