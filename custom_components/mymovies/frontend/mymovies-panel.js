@@ -513,6 +513,8 @@ class MyMoviesPanel extends HTMLElement {
     $("filters-toggle").addEventListener("click", () => {
       this._filtersOpen = !this._filtersOpen;
       $("filters").classList.toggle("open", this._filtersOpen);
+      // Animate only on a click, not when the shell re-renders already open.
+      $("filters").classList.toggle("opening", this._filtersOpen);
       $("filters-toggle").setAttribute("aria-expanded", String(this._filtersOpen));
     });
     $("filters-reset").addEventListener("click", () => {
@@ -1058,6 +1060,9 @@ const STYLE = `
     #view { margin-left: 0; }
     .filters { display: none; width: 100%; grid-template-columns: 1fr 1fr; gap: 8px; padding-bottom: 4px; }
     .filters.open { display: grid; }
+    .filters.opening { animation: filters-in 220ms ease-out; transform-origin: top; }
+    @keyframes filters-in { from { opacity: 0; transform: translateY(-10px) scaleY(0.96); } }
+    @media (prefers-reduced-motion: reduce) { .filters.opening { animation: none; } }
     .filters .select, .filters .select select { width: 100%; min-width: 0; }
     .filters .sortgroup, .filters .years, .filters .segmented, .filters .select.wide, .filters-reset { grid-column: 1 / -1; }
     .filters .sortgroup .select { flex: 1; }
