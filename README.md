@@ -135,6 +135,12 @@ of covers and offers:
 The details come from the imported export: re-import it after updating the
 integration to fill in new columns.
 
+## Removal
+
+Removing the integration deletes the whole collection it keeps in Home Assistant:
+the imported titles, the viewings, the genres and covers you chose (uploaded images
+included). The options form says so too. Keep your My Movies export to start again.
+
 ## Privacy
 
 Your credentials are stored in Home Assistant and only sent to the My Movies API.

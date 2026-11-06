@@ -42,7 +42,7 @@
     "step": {
       "init": {
         "title": "Collection export and covers",
-        "description": "Export your collection from the My Movies app (CSV) and import it here; re-import it after adding titles. Titles currently known: {count}.\n\nThe TMDB key is required: get it for free on [themoviedb.org]({tmdb_url}). The OMDb key is optional: get it for free on [omdbapi.com]({omdb_url}).",
+        "description": "Export your collection from the My Movies app (CSV) and import it here; re-import it after adding titles. Titles currently known: {count}.\n\n⚠️ Removing the integration deletes the whole collection kept in Home Assistant (titles, viewings, chosen genres and covers).\n\nThe TMDB key is required: get it for free on [themoviedb.org]({tmdb_url}). The OMDb key is optional: get it for free on [omdbapi.com]({omdb_url}).",
         "data": { "export_file": "Collection export (CSV)", "import_mode": "Import mode", "tmdb_api_key": "TMDB API key", "omdb_api_key": "OMDb API key (optional)" },
         "data_description": {
           "export_file": "The CSV file exported by the My Movies app. Leave empty to keep the current one.",

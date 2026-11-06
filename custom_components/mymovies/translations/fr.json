@@ -42,7 +42,7 @@
     "step": {
       "init": {
         "title": "Export de la collection et jaquettes",
-        "description": "Exportez votre collection depuis l'application My Movies (CSV) et importez-la ici ; ré-importez-la après avoir ajouté des titres. Titres actuellement connus : {count}.\n\nLa clé TMDB est obligatoire : obtenez-la gratuitement sur [themoviedb.org]({tmdb_url}). La clé OMDb est facultative : obtenez-la gratuitement sur [omdbapi.com]({omdb_url}).",
+        "description": "Exportez votre collection depuis l'application My Movies (CSV) et importez-la ici ; ré-importez-la après avoir ajouté des titres. Titres actuellement connus : {count}.\n\n⚠️ Supprimer l'intégration efface toute la collection conservée dans Home Assistant (titres, visionnages, genres et jaquettes choisis).\n\nLa clé TMDB est obligatoire : obtenez-la gratuitement sur [themoviedb.org]({tmdb_url}). La clé OMDb est facultative : obtenez-la gratuitement sur [omdbapi.com]({omdb_url}).",
         "data": { "export_file": "Export de la collection (CSV)", "import_mode": "Mode d'import", "tmdb_api_key": "Clé API TMDB", "omdb_api_key": "Clé API OMDb (facultative)" },
         "data_description": {
           "export_file": "Le fichier CSV exporté par l'application My Movies. Laissez vide pour garder l'actuel.",
