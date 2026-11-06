@@ -618,16 +618,28 @@ async def test_tmdb_countries() -> None:
 
 async def test_api_switched_off(hass: HomeAssistant, hass_ws_client) -> None:
     """Without the API: no sign-in, no watched writes, the collection comes from the export."""
+    from custom_components.mymovies import omdb, tmdb
+
     with (
         patch("custom_components.mymovies.const.API_ENABLED", False),
         patch(f"{CLIENT}.async_get_titles") as api,
         patch("custom_components.mymovies.catalog.CatalogStore.async_load", AsyncMock()),
     ):
         result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
-        assert result["step_id"] == "local" and not result["data_schema"].schema
-        result = await hass.config_entries.flow.async_configure(result["flow_id"], {})
+        assert result["step_id"] == "local"
+        assert {str(k) for k in result["data_schema"].schema} == {"tmdb_api_key", "omdb_api_key"}
+        # The TMDB key is required and checked; the OMDb one is optional and checked too.
+        bad = AsyncMock(side_effect=omdb.OmdbAuthError("Invalid API key!"))
+        with patch.object(tmdb, "async_validate_key", AsyncMock()), patch.object(omdb, "async_validate_key", bad):
+            result = await hass.config_entries.flow.async_configure(
+                result["flow_id"], {"tmdb_api_key": "t", "omdb_api_key": "o"}
+            )
+        assert result["errors"] == {"omdb_api_key": "invalid_omdb_key"}
+        with patch.object(tmdb, "async_validate_key", AsyncMock()):
+            result = await hass.config_entries.flow.async_configure(result["flow_id"], {"tmdb_api_key": " t "})
         await hass.async_block_till_done()
         assert result["type"] is FlowResultType.CREATE_ENTRY and result["data"] == {}
+        assert result["options"] == {"tmdb_api_key": "t"}
         entry = hass.config_entries.async_entries(DOMAIN)[0]
         coordinator = entry.runtime_data
         coordinator.store.catalog = dict(CATALOG)
@@ -682,3 +694,18 @@ async def test_details_chosen_by_hand(hass: HomeAssistant, hass_ws_client) -> No
     assert (await send(genres=[], countries=[]))["success"]
     assert title.id.lower() not in coordinator.store.details
     assert not (await send(genres=["Action"], title_id="nope"))["success"]
+
+
+def test_omdb_parse() -> None:
+    """OMDb answers become My Movies genres, ISO countries and numbers."""
+    from custom_components.mymovies import omdb
+
+    data = {
+        "imdbRating": "8.6", "Genre": "Adventure, Drama, Sci-Fi, Short", "Country": "United States, United Kingdom, Atlantis",
+        "Runtime": "169 min", "Director": "Christopher Nolan",
+    }
+    assert omdb.parse(data) == {
+        "rating": 8.6, "genres": ["Adventure", "Drama", "Science-Fiction"], "countries": ["US", "GB"],
+        "runtime": 169, "director": "Christopher Nolan",
+    }
+    assert omdb.parse({"imdbRating": "N/A", "Runtime": "N/A", "Director": "N/A"})["rating"] is None

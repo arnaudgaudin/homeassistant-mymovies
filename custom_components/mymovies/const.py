@@ -19,6 +19,12 @@ def api_enabled() -> bool:
 
 CONF_EXPORT_FILE = "export_file"
 CONF_TMDB_API_KEY = "tmdb_api_key"
+CONF_OMDB_API_KEY = "omdb_api_key"
+# Where to get the keys, shown in the setup and options forms.
+KEY_URLS = {
+    "tmdb_url": "https://www.themoviedb.org/settings/api",
+    "omdb_url": "https://www.omdbapi.com/apikey.aspx",
+}
 
 ATTR_TITLE = "title"
 ATTR_NOTES = "notes"

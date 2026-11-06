@@ -12,7 +12,12 @@
       },
       "local": {
         "title": "My Movies",
-        "description": "Your collection comes from the CSV export of the My Movies app, completed by TMDB. After setup, import the export from the My Movies panel (Import button) or the integration options."
+        "description": "Your collection comes from the CSV export of the My Movies app, completed by TMDB. After setup, import the export from the My Movies panel (Import button) or the integration options.\n\nThe TMDB key is required: get it for free on [themoviedb.org]({tmdb_url}). The OMDb key is optional: get it for free on [omdbapi.com]({omdb_url}).",
+        "data": { "tmdb_api_key": "TMDB API key", "omdb_api_key": "OMDb API key (optional)" },
+        "data_description": {
+          "tmdb_api_key": "Required. Free TMDB key (v3): covers, French titles, box sets, genres, ratings and production countries.",
+          "omdb_api_key": "Optional. Free OMDb key: a fallback with IMDb data (rating, genres, countries, running time, director) for titles TMDB leaves incomplete."
+        }
       },
       "reauth_confirm": {
         "title": "Re-authenticate",
@@ -22,7 +27,11 @@
     },
     "error": {
       "invalid_auth": "Invalid username or password.",
-      "cannot_connect": "Could not reach the My Movies service."
+      "cannot_connect": "Could not reach the My Movies service.",
+      "invalid_tmdb_key": "TMDB rejected this API key.",
+      "tmdb_unreachable": "Could not reach TMDB to check the key.",
+      "invalid_omdb_key": "OMDb rejected this API key (or its daily limit is reached).",
+      "omdb_unreachable": "Could not reach OMDb to check the key."
     },
     "abort": {
       "already_configured": "This collection is already configured.",
@@ -33,18 +42,21 @@
     "step": {
       "init": {
         "title": "Collection export and covers",
-        "description": "Export your collection from the My Movies app (CSV) and import it here; re-import it after adding titles. Titles currently known: {count}.",
-        "data": { "export_file": "Collection export (CSV)", "tmdb_api_key": "TMDB API key" },
+        "description": "Export your collection from the My Movies app (CSV) and import it here; re-import it after adding titles. Titles currently known: {count}.\n\nThe TMDB key is required: get it for free on [themoviedb.org]({tmdb_url}). The OMDb key is optional: get it for free on [omdbapi.com]({omdb_url}).",
+        "data": { "export_file": "Collection export (CSV)", "tmdb_api_key": "TMDB API key", "omdb_api_key": "OMDb API key (optional)" },
         "data_description": {
           "export_file": "The CSV file exported by the My Movies app. Leave empty to keep the current one.",
-          "tmdb_api_key": "Optional free TMDB API key (v3) for high-resolution posters, genres and production countries."
+          "tmdb_api_key": "Required. Free TMDB key (v3): covers, French titles, box sets, genres, ratings and production countries.",
+          "omdb_api_key": "Optional. Free OMDb key: a fallback with IMDb data (rating, genres, countries, running time, director) for titles TMDB leaves incomplete."
         }
       }
     },
     "error": {
       "invalid_export": "This file is not a My Movies collection export.",
       "invalid_tmdb_key": "TMDB rejected this API key.",
-      "tmdb_unreachable": "Could not reach TMDB to check the key."
+      "tmdb_unreachable": "Could not reach TMDB to check the key.",
+      "invalid_omdb_key": "OMDb rejected this API key (or its daily limit is reached).",
+      "omdb_unreachable": "Could not reach OMDb to check the key."
     }
   },
   "issues": {

@@ -12,7 +12,12 @@
       },
       "local": {
         "title": "My Movies",
-        "description": "Votre collection vient de l'export CSV de l'application My Movies, complété par TMDB. Après l'installation, importez l'export depuis le panneau My Movies (bouton Importer) ou les options de l'intégration."
+        "description": "Votre collection vient de l'export CSV de l'application My Movies, complété par TMDB. Après l'installation, importez l'export depuis le panneau My Movies (bouton Importer) ou les options de l'intégration.\n\nLa clé TMDB est obligatoire : obtenez-la gratuitement sur [themoviedb.org]({tmdb_url}). La clé OMDb est facultative : obtenez-la gratuitement sur [omdbapi.com]({omdb_url}).",
+        "data": { "tmdb_api_key": "Clé API TMDB", "omdb_api_key": "Clé API OMDb (facultative)" },
+        "data_description": {
+          "tmdb_api_key": "Obligatoire. Clé TMDB (v3) gratuite : jaquettes, titres français, coffrets, genres, notes et pays de production.",
+          "omdb_api_key": "Facultative. Clé OMDb gratuite : secours avec les données IMDb (note, genres, pays, durée, réalisation) pour les titres que TMDB laisse incomplets."
+        }
       },
       "reauth_confirm": {
         "title": "Nouvelle authentification",
@@ -22,7 +27,11 @@
     },
     "error": {
       "invalid_auth": "Identifiant ou mot de passe incorrect.",
-      "cannot_connect": "Impossible de joindre le service My Movies."
+      "cannot_connect": "Impossible de joindre le service My Movies.",
+      "invalid_tmdb_key": "TMDB a refusé cette clé API.",
+      "tmdb_unreachable": "Impossible de joindre TMDB pour vérifier la clé.",
+      "invalid_omdb_key": "OMDb a refusé cette clé API (ou sa limite quotidienne est atteinte).",
+      "omdb_unreachable": "Impossible de joindre OMDb pour vérifier la clé."
     },
     "abort": {
       "already_configured": "Cette collection est déjà configurée.",
@@ -33,18 +42,21 @@
     "step": {
       "init": {
         "title": "Export de la collection et jaquettes",
-        "description": "Exportez votre collection depuis l'application My Movies (CSV) et importez-la ici ; ré-importez-la après avoir ajouté des titres. Titres actuellement connus : {count}.",
-        "data": { "export_file": "Export de la collection (CSV)", "tmdb_api_key": "Clé API TMDB" },
+        "description": "Exportez votre collection depuis l'application My Movies (CSV) et importez-la ici ; ré-importez-la après avoir ajouté des titres. Titres actuellement connus : {count}.\n\nLa clé TMDB est obligatoire : obtenez-la gratuitement sur [themoviedb.org]({tmdb_url}). La clé OMDb est facultative : obtenez-la gratuitement sur [omdbapi.com]({omdb_url}).",
+        "data": { "export_file": "Export de la collection (CSV)", "tmdb_api_key": "Clé API TMDB", "omdb_api_key": "Clé API OMDb (facultative)" },
         "data_description": {
           "export_file": "Le fichier CSV exporté par l'application My Movies. Laissez vide pour garder l'actuel.",
-          "tmdb_api_key": "Clé API TMDB (v3) gratuite et facultative, pour des jaquettes en haute résolution, les genres et les pays de production."
+          "tmdb_api_key": "Obligatoire. Clé TMDB (v3) gratuite : jaquettes, titres français, coffrets, genres, notes et pays de production.",
+          "omdb_api_key": "Facultative. Clé OMDb gratuite : secours avec les données IMDb (note, genres, pays, durée, réalisation) pour les titres que TMDB laisse incomplets."
         }
       }
     },
     "error": {
       "invalid_export": "Ce fichier n'est pas un export de collection My Movies.",
       "invalid_tmdb_key": "TMDB a refusé cette clé API.",
-      "tmdb_unreachable": "Impossible de joindre TMDB pour vérifier la clé."
+      "tmdb_unreachable": "Impossible de joindre TMDB pour vérifier la clé.",
+      "invalid_omdb_key": "OMDb a refusé cette clé API (ou sa limite quotidienne est atteinte).",
+      "omdb_unreachable": "Impossible de joindre OMDb pour vérifier la clé."
     }
   },
   "issues": {
