@@ -29,7 +29,7 @@ const STRINGS = {
     stats: "Statistics", statTitles: "titles", withoutData: "{n} titles without this information", noData: "No data yet.",
     over: "≥ {n}", minutes: "minutes", withoutDataOne: "1 title without this information",
     statNames: { disc: "Disc format", media: "Media type", genres: "Genres", ratings: "Ratings", classif: "Classification", runtime: "Running time", decade: "Production decade", countries: "Production countries" },
-    classes: { none: "Not rated", all: "All audiences", parental: "Parental guidance", 12: "Not under 12", 16: "Not under 16", 18: "Not under 18" },
+    classes: { none: "Not rated", tp: "All audiences", parental: "Parental guidance", 12: "Not under 12", 16: "Not under 16", 18: "Not under 18" },
     editions: "editions", editionsTitle: "Editions in the collection",
     changeCover: "Change cover", coverTitle: "Choose the cover", coverAuto: "Automatic (best resolution)",
     coverUpload: "Use my own image (JPEG or PNG)", coverUploadButton: "Upload", back: "Back",
@@ -69,7 +69,7 @@ const STRINGS = {
     stats: "Statistiques", statTitles: "titres", withoutData: "{n} titres sans cette information", noData: "Aucune donnée pour l'instant.",
     over: "≥ {n}", minutes: "minutes", withoutDataOne: "1 titre sans cette information",
     statNames: { disc: "Format de disque", media: "Type de média", genres: "Genres", ratings: "Notations", classif: "Classification", runtime: "Durée", decade: "Décennie de production", countries: "Pays de production" },
-    classes: { none: "Sans classification", all: "Tous publics", parental: "Accord parental", 12: "Interdit aux moins de 12 ans", 16: "Interdit aux moins de 16 ans", 18: "Interdit aux moins de 18 ans" },
+    classes: { none: "Sans classification", tp: "Tous publics", parental: "Accord parental", 12: "Interdit aux moins de 12 ans", 16: "Interdit aux moins de 16 ans", 18: "Interdit aux moins de 18 ans" },
     editions: "éditions", editionsTitle: "Éditions dans la collection",
     changeCover: "Changer la jaquette", coverTitle: "Choisir la jaquette", coverAuto: "Automatique (meilleure résolution)",
     coverUpload: "Utiliser ma propre image (JPEG ou PNG)", coverUploadButton: "Importer", back: "Retour",
@@ -117,11 +117,11 @@ const GENRES_FR = {
 const GENRE_ALIASES = { Anime: "Animation", Sports: "Sport", Thriller: "Suspense/Thriller" };
 const canonGenre = (g) => GENRE_ALIASES[g] || g;
 // Classifications of My Movies, in order; other systems' ratings are mapped onto them.
-const RATING_CLASSES = ["none", "all", "parental", "12", "16", "18"];
+const RATING_CLASSES = ["none", "tp", "parental", "12", "16", "18"];
 function ratingClass(rating) {
   const r = String(rating || "").trim().toLowerCase();
   if (!r || /unrated|not rated|^nr$|non class|sans class/.test(r)) return "none";
-  if (/tous publics|^tp$|^u$|^g$|all ages/.test(r)) return "all";
+  if (/tous publics|^tp$|^u$|^g$|all ages/.test(r)) return "tp";
   if (/accord parental|^pg$/.test(r)) return "parental";
   if (r === "pg-13") return "12";
   if (r === "r") return "16";
@@ -129,7 +129,7 @@ function ratingClass(rating) {
   const n = r.match(/(\d{1,2})/);
   if (!n) return "none";
   const age = Number(n[1]);
-  return age <= 6 ? "all" : age < 12 ? "parental" : age < 16 ? "12" : age < 18 ? "16" : "18";
+  return age <= 6 ? "tp" : age < 12 ? "parental" : age < 16 ? "12" : age < 18 ? "16" : "18";
 }
 // Edition shown on the tile of a film owned in several editions: 4K first.
 const DISC_RANK = { "4K Ultra HD": 0, "Blu-ray": 1, DVD: 2 };
