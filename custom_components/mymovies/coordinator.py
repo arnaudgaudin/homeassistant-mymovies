@@ -637,6 +637,10 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             # Box sets have no genre in the export: TMDB gives those of their films.
             data["genres"] = data["genres"] or (self.store.covers.get(key) or {}).get("genres", [])
             data["children"] = [self.describe_child(c) for c in children]
+            # A box set TMDB does not know takes the genres of its films.
+            data["genres"] = data["genres"] or list(
+                dict.fromkeys(g for c in data["children"] for g in c["genres"])
+            )
             data["box_set_id"] = self.data.box_of.get(key) if self.data else None
         else:
             data.pop("_sign")

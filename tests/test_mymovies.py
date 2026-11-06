@@ -634,3 +634,20 @@ async def test_api_switched_off(hass: HomeAssistant, hass_ws_client) -> None:
         again = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
         assert again["type"] is FlowResultType.ABORT
     api.assert_not_called()
+
+
+async def test_box_set_genres_from_its_films(hass: HomeAssistant) -> None:
+    """A box set without genres, unknown to TMDB, shows those of its discs."""
+    entry = await _setup(hass)
+    coordinator = entry.runtime_data
+    coordinator.store.catalog = {
+        1: CatalogEntry("Saga", "Saga", "Saga", None, 2020),
+        2: CatalogEntry("Film A", "Film A", "Saga 01: Film A", "tt1", 2010, genres=["Action"], box=1, box_order=1),
+        3: CatalogEntry("Film B", "Film B", "Saga 02: Film B", "tt2", 2012, genres=["Action", "Drama"], box=1, box_order=2),
+    }
+    with patch(f"{CLIENT}.async_get_titles", side_effect=MyMoviesAuthError("closed")):
+        await coordinator.async_refresh()
+    box = next(t for t in coordinator.data.titles.values() if t.collection_number == 1)
+    described = coordinator.describe(box, details=True)
+    assert [c["genres"] for c in described["children"]] == [["Action"], ["Action", "Drama"]]
+    assert described["genres"] == ["Action", "Drama"]
