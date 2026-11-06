@@ -26,6 +26,9 @@ const STRINGS = {
     unofficial: "Unofficial integration, not affiliated with or endorsed by My Movies.",
     years: "Years", filters: "Filters", resetFilters: "Reset filters",
     allClasses: "All classifications",
+    stats: "Statistics", statTitles: "titles", withoutData: "{n} titles without this information", noData: "No data yet.",
+    over: "≥ {n}", minutes: "minutes", withoutDataOne: "1 title without this information",
+    statNames: { disc: "Disc format", media: "Media type", genres: "Genres", ratings: "Ratings", classif: "Classification", runtime: "Running time", decade: "Production decade", countries: "Production countries" },
     classes: { none: "Not rated", all: "All audiences", parental: "Parental guidance", 12: "Not under 12", 16: "Not under 16", 18: "Not under 18" },
     editions: "editions", editionsTitle: "Editions in the collection",
     changeCover: "Change cover", coverTitle: "Choose the cover", coverAuto: "Automatic (best resolution)",
@@ -63,6 +66,9 @@ const STRINGS = {
     unofficial: "Intégration non officielle, ni affiliée à My Movies ni approuvée par My Movies.",
     years: "Années", filters: "Filtres", resetFilters: "Réinitialiser les filtres",
     allClasses: "Toutes les classifications",
+    stats: "Statistiques", statTitles: "titres", withoutData: "{n} titres sans cette information", noData: "Aucune donnée pour l'instant.",
+    over: "≥ {n}", minutes: "minutes", withoutDataOne: "1 titre sans cette information",
+    statNames: { disc: "Format de disque", media: "Type de média", genres: "Genres", ratings: "Notations", classif: "Classification", runtime: "Durée", decade: "Décennie de production", countries: "Pays de production" },
     classes: { none: "Sans classification", all: "Tous publics", parental: "Accord parental", 12: "Interdit aux moins de 12 ans", 16: "Interdit aux moins de 16 ans", 18: "Interdit aux moins de 18 ans" },
     editions: "éditions", editionsTitle: "Éditions dans la collection",
     changeCover: "Changer la jaquette", coverTitle: "Choisir la jaquette", coverAuto: "Automatique (meilleure résolution)",
@@ -134,6 +140,25 @@ const SORT_ICON = icon("M7 4v13H4l4 4 4-4H9V4zm7 0-4 4h3v13h2V8h3z");
 const REFRESH = icon("M17.65 6.35A7.96 7.96 0 0 0 12 4a8 8 0 1 0 7.73 10h-2.08A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4z");
 const UPLOAD = icon("M9 16v-6H5l7-7 7 7h-4v6zm-4 4v-2h14v2z");
 const FILTER = icon("M6 13h12v-2H6zM3 6v2h18V6zm7 12h4v-2h-4z");
+const CHART = icon("M11 2v20c-5.07-.5-9-4.79-9-10s3.93-9.5 9-10m2.03 0v8.99H22c-.47-4.74-4.24-8.52-8.97-8.99m0 11.01V22c4.74-.47 8.5-4.25 8.97-8.99z");
+const CHEVRON = icon("M8.59 16.58 13.17 12 8.59 7.41 10 6l6 6-6 6z");
+// Statistics: [key, icon, chart]. Pies for a few parts, bars for many, columns for ordered buckets.
+const STATS = [
+  ["disc", icon("M12 14a2 2 0 1 1 0-4 2 2 0 0 1 0 4m0-10a8 8 0 1 0 0 16 8 8 0 0 0 0-16"), "pie"],
+  ["media", icon("M18 9h-2V7h2m0 6h-2v-2h2m0 6h-2v-2h2M8 9H6V7h2m0 6H6v-2h2m0 6H6v-2h2M18 3v2h-2V3H8v2H6V3H4v18h2v-2h2v2h8v-2h2v2h2V3z"), "pie"],
+  ["genres", icon("M5.5 7A1.5 1.5 0 1 1 7 5.5 1.5 1.5 0 0 1 5.5 7m15.91 4.58-9-9A2 2 0 0 0 11 2H4a2 2 0 0 0-2 2v7a2 2 0 0 0 .59 1.41l9 9A2 2 0 0 0 13 22a2 2 0 0 0 1.41-.59l7-7A2 2 0 0 0 22 13a2 2 0 0 0-.59-1.42"), "bars"],
+  ["ratings", icon("M12 17.27 18.18 21l-1.64-7.03L22 9.24l-7.19-.62L12 2 9.19 8.62 2 9.24l5.45 4.73L5.82 21z"), "columns"],
+  ["classif", icon("M12 1 3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5z"), "pie"],
+  ["runtime", icon("M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16m0-18a10 10 0 1 1 0 20 10 10 0 0 1 0-20m.5 5v5.25l4.5 2.67-.75 1.23L11 13V7z"), "columns"],
+  ["decade", icon("M19 19H5V8h14M16 1v2H8V1H6v2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-1V1m1 11h-5v5h5z"), "columns"],
+  ["countries", icon("M17.9 17.39A2 2 0 0 0 16 16h-1v-3a1 1 0 0 0-1-1H8v-2h2a1 1 0 0 0 1-1V7h2a2 2 0 0 0 2-2v-.41A7.99 7.99 0 0 1 20 12a8 8 0 0 1-2.1 5.39M11 19.93A8 8 0 0 1 4 12c0-.62.08-1.22.21-1.79L9 15v1a2 2 0 0 0 2 2M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20"), "bars"],
+];
+// Categorical slots validated for colour-blind separation (light / dark surfaces).
+const PIE_COLORS = {
+  light: ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"],
+  dark: ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300"],
+};
+const OTHER_COLOR = "#8a8a86";
 const GRID = icon("M3 11h8V3H3zm0 10h8v-8H3zm10 0h8v-8h-8zm0-18v8h8V3z");
 const LIST = icon("M9 5v4h12V5zM4 9h4V5H4zm5 10h12v-4H9zm-5 0h4v-4H4zm5-5h12v-4H9zm-5 0h4v-4H4z");
 
@@ -436,6 +461,7 @@ class MyMoviesPanel extends HTMLElement {
         <span class="menu"></span>
         <div class="title">My Movies <a class="source" href="https://www.mymovies.dk" target="_blank" rel="noopener noreferrer" title="${esc(t.officialSite)}">mymovies.dk ↗</a></div>
         <div class="count"></div>
+        <button class="icon" id="stats" title="${esc(t.stats)}" aria-label="${esc(t.stats)}">${CHART}</button>
         ${isAdmin ? `<button class="icon" id="import" title="${esc(t.importCsv)}" aria-label="${esc(t.importCsv)}">${UPLOAD}</button>` : ""}
         <button class="icon" id="refresh" title="${esc(t.refresh)}" aria-label="${esc(t.refresh)}">${REFRESH}</button>
       </div>
@@ -559,6 +585,7 @@ class MyMoviesPanel extends HTMLElement {
     });
     $("refresh").addEventListener("click", () => this._load());
     $("import")?.addEventListener("click", () => this._openDialog({ kind: "import" }));
+    $("stats").addEventListener("click", () => this._openDialog({ kind: "stats", stat: null }));
     $("grid").addEventListener("click", (ev) => {
       const item = ev.target.closest("[data-key]");
       if (item) this._openDialog({ kind: "title", key: item.dataset.key });
@@ -681,7 +708,7 @@ class MyMoviesPanel extends HTMLElement {
 
   _renderDialog(animate) {
     const root = this.shadowRoot.getElementById("dialog");
-    const bodies = { import: () => this._importBody(), cover: () => this._coverBody(), title: () => this._titleBody() };
+    const bodies = { stats: () => this._statsBody(), import: () => this._importBody(), cover: () => this._coverBody(), title: () => this._titleBody() };
     const body = bodies[this._dialog.kind]();
     if (body === null) return this._closeDialog();
     root.innerHTML = `
@@ -836,6 +863,135 @@ class MyMoviesPanel extends HTMLElement {
     }
   }
 
+  // ---- statistics ------------------------------------------------------
+
+  // [[label, count]] of a statistic over the collection's titles, and how many lack the information.
+  _statRows(key) {
+    const t = this._t;
+    const titles = this._titles || [];
+    const counts = new Map();
+    let missing = 0;
+    const add = (k) => counts.set(k, (counts.get(k) || 0) + 1);
+    const byCount = () => [...counts].sort((a, b) => b[1] - a[1] || String(a[0]).localeCompare(String(b[0]), this._lang));
+    // Ordered numeric buckets, empty ones in between included.
+    const buckets = (label) => {
+      const keys = [...counts.keys()];
+      if (!keys.length) return [];
+      const rows = [];
+      for (let k = Math.min(...keys), step = key === "decade" ? 10 : 1; k <= Math.max(...keys); k += step) rows.push([label(k), counts.get(k) || 0]);
+      return rows;
+    };
+    const each = (value) => (value == null || value === "" ? missing++ : add(value));
+    let rows;
+    if (key === "disc") {
+      titles.forEach((i) => each(i.three_d ? t.threeD : i.disc_type));
+      rows = byCount();
+    } else if (key === "media") {
+      const names = { Movie: t.movies, "TV Serie": t.series, Documentary: t.documentaries };
+      titles.forEach((i) => each(names[i.media_type] || i.media_type));
+      rows = byCount();
+    } else if (key === "classif") {
+      titles.forEach((i) => add(ratingClass(i.parental_rating)));
+      rows = RATING_CLASSES.filter((c) => counts.has(c)).map((c) => [t.classes[c], counts.get(c)]);
+    } else if (key === "genres" || key === "countries") {
+      const region = key === "countries" && typeof Intl.DisplayNames === "function" ? new Intl.DisplayNames([this._lang], { type: "region" }) : null;
+      const name = (c) => { try { return region ? region.of(c) : c; } catch { return c; } };
+      titles.forEach((i) => {
+        const values = key === "genres" ? new Set((i.genres || []).map((g) => this._genre(canonGenre(g)))) : new Set((i.countries || []).map(name));
+        if (!values.size) missing++;
+        values.forEach(add);
+      });
+      rows = byCount();
+    } else if (key === "ratings") {
+      titles.forEach((i) => each(i.rating ? Math.max(4, Math.min(9, Math.floor(i.rating))) : null));
+      rows = buckets((k) => (k === 4 ? "< 5" : `${k}–${k + 1}`));
+    } else if (key === "runtime") {
+      // 0–60, then 30-minute slices up to 240 and more.
+      titles.forEach((i) => each(i.runtime ? (i.runtime < 60 ? 0 : Math.min(7, Math.floor((i.runtime - 60) / 30) + 1)) : null));
+      rows = buckets((k) => (k === 0 ? "0–\n60" : k === 7 ? t.over.replace("{n}", 240) : `${30 + 30 * k}–\n${60 + 30 * k}`));
+    } else if (key === "decade") {
+      titles.forEach((i) => each(i.year ? Math.floor(i.year / 10) * 10 : null));
+      rows = buckets((k) => String(k));
+    }
+    return { rows, missing };
+  }
+
+  _statsBody() {
+    const t = this._t;
+    const d = this._dialog;
+    if (!d.stat) {
+      return `
+        <div class="import-body stats-body">
+          <h2>${esc(t.stats)}</h2>
+          <div class="stat-list">
+            ${STATS.map(([key, svg]) => `
+              <button class="stat-item" data-action="stat" data-stat="${key}">
+                <span class="stat-icon">${svg}</span><span class="stat-name">${esc(t.statNames[key])}</span>${CHEVRON}
+              </button>`).join("")}
+          </div>
+        </div>`;
+    }
+    const [key, svg, chart] = STATS.find(([k]) => k === d.stat);
+    const { rows, missing } = this._statRows(key);
+    const body = !rows.length
+      ? `<p class="hint">${esc(t.noData)}</p>`
+      : chart === "pie" ? this._pie(rows) : chart === "bars" ? this._bars(rows) : this._columns(rows);
+    const series = PIE_COLORS[this._hass.themes?.darkMode ? "dark" : "light"][0];
+    return `
+      <div class="import-body stats-body" style="--mm-series:${series}">
+        <h2><span class="stat-icon">${svg}</span>${esc(t.statNames[key])}</h2>
+        ${key === "runtime" ? `<div class="meta">${esc(t.minutes)}</div>` : ""}
+        ${body}
+        ${missing ? `<p class="hint">${esc(missing === 1 ? t.withoutDataOne : t.withoutData.replace("{n}", missing))}</p>` : ""}
+        <div class="actions"><button class="secondary" data-action="stats-back">${esc(t.back)}</button></div>
+      </div>`;
+  }
+
+  _pie(rows) {
+    const colors = PIE_COLORS[this._hass.themes?.darkMode ? "dark" : "light"];
+    // Six slices at most: the smallest parts are folded into "Other".
+    if (rows.length > colors.length) {
+      const rest = rows.slice(colors.length - 1).reduce((sum, [, v]) => sum + v, 0);
+      rows = [...rows.slice(0, colors.length - 1), [this._lang === "fr" ? "Autres" : "Other", rest]];
+    }
+    const total = rows.reduce((sum, [, v]) => sum + v, 0);
+    const color = (n, label) => (n === colors.length - 1 && /^(Autres|Other)$/.test(label) ? OTHER_COLOR : colors[n]);
+    const pct = (v) => (v / total < 0.005 ? "< 1 %" : `${Math.round((v / total) * 100)} %`);
+    const R = 70, C = 2 * Math.PI * R;
+    let offset = 0;
+    const arcs = rows.map(([label, v], n) => {
+      const len = (v / total) * C;
+      // A 2px gap between slices, unless one slice is the whole.
+      const dash = rows.length > 1 ? Math.max(len - 2, 0.5) : C;
+      const arc = `<circle cx="100" cy="100" r="${R}" fill="none" stroke="${color(n, label)}" stroke-width="34" stroke-dasharray="${dash} ${C}" stroke-dashoffset="${-offset}" transform="rotate(-90 100 100)"><title>${esc(label)} : ${v} (${pct(v)})</title></circle>`;
+      offset += len;
+      return arc;
+    });
+    return `
+      <div class="pie">
+        <svg viewBox="0 0 200 200" role="img" aria-label="${esc(rows.map(([l, v]) => `${l} ${v}`).join(", "))}">
+          ${arcs.join("")}
+          <text x="100" y="98" text-anchor="middle" class="pie-total">${total}</text>
+          <text x="100" y="118" text-anchor="middle" class="pie-unit">${esc(this._t.statTitles)}</text>
+        </svg>
+        <ul class="legend">
+          ${rows.map(([label, v], n) => `<li><span class="swatch" style="background:${color(n, label)}"></span><span class="lbl">${esc(label)}</span><span class="val">${v}</span><span class="pct">${pct(v)}</span></li>`).join("")}
+        </ul>
+      </div>`;
+  }
+
+  _bars(rows) {
+    const max = Math.max(...rows.map(([, v]) => v));
+    return `<div class="hbars">${rows.map(([label, v]) => `
+      <div class="hbar" title="${esc(label)} : ${v}"><span class="lbl">${esc(label)}</span><span class="track"><span class="fill" style="width:${(v / max) * 100}%"></span></span><span class="val">${v}</span></div>`).join("")}</div>`;
+  }
+
+  _columns(rows) {
+    const max = Math.max(...rows.map(([, v]) => v), 1);
+    return `<div class="cols">${rows.map(([label, v]) => `
+      <div class="col" title="${esc(label)} : ${v}"><span class="val">${v || ""}</span><span class="bar" style="height:${(v / max) * 100}%"></span><span class="lbl">${esc(label)}</span></div>`).join("")}</div>`;
+  }
+
   _importBody() {
     const t = this._t;
     const d = this._dialog;
@@ -864,6 +1020,10 @@ class MyMoviesPanel extends HTMLElement {
       return this._closeDialog();
     }
     if (action === "import") return this._import();
+    if (action === "stat" || action === "stats-back") {
+      this._dialog.stat = action === "stat" ? ev.target.closest("[data-stat]").dataset.stat : null;
+      return this._renderDialog(false);
+    }
     if (action === "change-cover") return this._openCoverDialog();
     if (action === "back") {
       this._dialog = { kind: "title", key: this._dialog.back, error: null };
@@ -1043,6 +1203,36 @@ const STYLE = `
   .hint { color: var(--secondary-text-color); font-size: 13px; }
   .dialog-cover { width: min(760px, 100%); }
   .import-body { padding: 24px; }
+  .dialog-stats { width: min(560px, 100%); }
+  .stats-body h2 { display: flex; align-items: center; gap: 10px; }
+  .stat-list { display: flex; flex-direction: column; margin-top: 12px; }
+  .stat-item { display: flex; align-items: center; gap: 14px; padding: 10px 4px; border: none; border-bottom: 1px solid var(--divider-color); background: none; color: inherit; font-size: 16px; text-align: left; cursor: pointer; }
+  .stat-item:hover { background: var(--secondary-background-color); }
+  .stat-item .stat-name { flex: 1; }
+  .stat-item > svg { width: 22px; height: 22px; fill: var(--secondary-text-color); }
+  .stat-icon { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border-radius: 50%; background: var(--secondary-background-color); flex: none; }
+  .stat-icon svg { width: 20px; height: 20px; fill: var(--primary-color); }
+  .pie { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 24px; margin-top: 16px; }
+  .pie svg { width: 180px; height: 180px; flex: none; margin: 0 auto; }
+  .pie-total { font-size: 28px; font-weight: 500; fill: var(--primary-text-color); }
+  .pie-unit { font-size: 13px; fill: var(--secondary-text-color); }
+  .legend { flex: 1 1 220px; list-style: none; margin: 0; padding: 0; }
+  .legend li { display: flex; align-items: center; gap: 8px; padding: 5px 0; font-size: 14px; }
+  .legend .swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+  .legend .lbl { flex: 1; }
+  .legend .val { font-weight: 500; }
+  .legend .pct { width: 44px; text-align: right; color: var(--secondary-text-color); }
+  .hbars { display: flex; flex-direction: column; gap: 6px; margin-top: 16px; max-height: 55vh; overflow: auto; }
+  .hbar { display: grid; grid-template-columns: minmax(90px, 35%) 1fr 32px; align-items: center; gap: 8px; font-size: 14px; }
+  .hbar .lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hbar .track { height: 14px; }
+  .hbar .fill { display: block; height: 100%; min-width: 2px; border-radius: 0 4px 4px 0; background: var(--mm-series, #2a78d6); }
+  .hbar .val { text-align: right; font-weight: 500; }
+  .cols { display: flex; align-items: flex-end; gap: 2px; height: 220px; margin-top: 16px; padding-bottom: 34px; }
+  .col { flex: 1; min-width: 0; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; align-items: center; position: relative; border-bottom: 1px solid var(--divider-color); }
+  .col .bar { width: 70%; max-width: 48px; border-radius: 4px 4px 0 0; background: var(--mm-series, #2a78d6); }
+  .col .val { font-size: 12px; font-weight: 500; margin-bottom: 2px; }
+  .col .lbl { position: absolute; top: calc(100% + 4px); font-size: 11px; line-height: 1.2; color: var(--secondary-text-color); white-space: pre-line; text-align: center; }
   .import-body p { line-height: 1.5; color: var(--secondary-text-color); }
   .import-body input[type="file"] { margin: 8px 0; max-width: 100%; }
   .actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 16px; }

@@ -103,6 +103,9 @@ of covers and offers:
 - **Expand box sets**: show the films of each box set instead of the box set itself;
 - a details dialog (synopsis, director, cast, genres, runtime, ratings, dates,
   box set contents) with **Mark as watched** / **Clear watched** buttons.
+- a **Statistics** button: disc format, media type, genres, ratings, classification,
+  running time (by 30 minutes), production decade and production countries (from
+  TMDB, so a TMDB key is needed), each as a pie, bar or column chart;
 - for administrators, an **Import** button to load a new collection export directly
   from the panel.
 
