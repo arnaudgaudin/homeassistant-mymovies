@@ -43,7 +43,9 @@ The My Movies API only gives the titles' names and IMDb IDs to the official
 apps. To get them, the integration imports the **collection export** of the
 My Movies app:
 
-1. In the My Movies app, export your collection to a CSV file.
+1. In the My Movies app, open **Settings → Sharing → Export collection**, choose the
+   **CSV** format (not TXT) and send the file where you can reach it (Google Drive,
+   e-mail…).
 2. In Home Assistant, open the My Movies integration → **Configure**, and upload the file.
 3. Re-import a fresh export after adding titles; a repair notice tells you when
    titles are missing.

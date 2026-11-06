@@ -41,6 +41,8 @@ const STRINGS = {
     importCsv: "Import the collection export",
     importTitle: "Import the My Movies export",
     importText: "In the My Movies app, export your collection to a CSV file, then choose it here. It gives the titles their names, IMDb IDs, details and watched state.",
+    exportHelp: "How to export from the My Movies app",
+    exportSteps: ["Open Settings → Sharing → Export collection.", "Choose the CSV format (not TXT).", "Send the file somewhere you can reach from here (Google Drive, e-mail…), then choose it below."],
     importModes: {
       update: ["Update", "Adds the new discs and the viewings of the export; keeps what was set here (viewings, genres, covers)."],
       replace: ["Full replace", "The export becomes the whole collection: viewings, genres and covers set here are erased."],
@@ -88,6 +90,8 @@ const STRINGS = {
     importCsv: "Importer l'export de la collection",
     importTitle: "Importer l'export My Movies",
     importText: "Dans l'application My Movies, exportez votre collection en fichier CSV, puis choisissez-le ici. Il donne aux titres leur nom, leur ID IMDb, leurs détails et leur statut « vu ».",
+    exportHelp: "Comment exporter depuis l'application My Movies",
+    exportSteps: ["Ouvrez Paramètres → Partage → Exporter la collection.", "Choisissez le format CSV (pas TXT).", "Envoyez le fichier là où vous pourrez le récupérer ici (Google Drive, e-mail…), puis choisissez-le ci-dessous."],
     importModes: {
       update: ["Mise à jour", "Ajoute les nouveaux disques et les visionnages de l'export ; garde ce qui a été réglé ici (visionnages, genres, jaquettes)."],
       replace: ["Remplacement complet", "L'export devient toute la collection : les visionnages, genres et jaquettes réglés ici sont effacés."],
@@ -1065,6 +1069,10 @@ class MyMoviesPanel extends HTMLElement {
       <div class="import-body">
         <h2>${esc(t.importTitle)}</h2>
         <p>${esc(t.importText)}</p>
+        <details class="export-help" ${this._titles?.length ? "" : "open"}>
+          <summary>${esc(t.exportHelp)}</summary>
+          <ol>${t.exportSteps.map((step) => `<li>${esc(step)}</li>`).join("")}</ol>
+        </details>
         <input id="file" type="file" accept=".csv,text/csv" ${this._busy ? "disabled" : ""} />
         ${this._titles?.length ? `<div class="import-modes" role="radiogroup">
           ${Object.entries(t.importModes).map(([mode, [label, hint]]) => `
@@ -1314,6 +1322,9 @@ const STYLE = `
   .hint { color: var(--secondary-text-color); font-size: 13px; }
   .dialog-cover { width: min(760px, 100%); }
   .import-body { padding: 24px; }
+  .export-help { margin: 0 0 12px; font-size: 14px; }
+  .export-help summary { cursor: pointer; color: var(--primary-color); }
+  .export-help ol { margin: 8px 0 0; padding-left: 20px; line-height: 1.6; color: var(--secondary-text-color); }
   .import-modes { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
   .import-mode { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--divider-color); border-radius: 10px; cursor: pointer; }
   .import-mode input { margin-top: 3px; }
