@@ -9,10 +9,11 @@ import logging
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
@@ -27,6 +28,7 @@ from .api import (
 from .catalog import IMPORT_UPDATE, CatalogEntry, CatalogStore, normalize_title, title_id
 from .covers import remove_upload
 from .const import (
+    SIGNAL_UPDATED,
     CONF_OMDB_API_KEY,
     CONF_TMDB_API_KEY,
     COVER_PATH,
@@ -71,6 +73,12 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
     """Poll the collection, its watched flags and box sets; hold the imported catalog."""
 
     config_entry: MyMoviesConfigEntry
+
+    @callback
+    def async_update_listeners(self) -> None:
+        """Also tell the open panels (covers found, import, watched...)."""
+        super().async_update_listeners()
+        async_dispatcher_send(self.hass, SIGNAL_UPDATED)
 
     def __init__(
         self,

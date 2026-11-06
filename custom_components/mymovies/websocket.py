@@ -12,10 +12,11 @@ from homeassistant.components.http.auth import async_sign_path
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
 from . import tmdb
 from .catalog import IMPORT_REPLACE, IMPORT_UPDATE, InvalidExportError, read_uploaded_export
-from .const import CONF_TMDB_API_KEY, DOMAIN, THUMBNAIL_URL_LIFETIME, TMDB_IMAGE_URL, api_enabled
+from .const import CONF_TMDB_API_KEY, DOMAIN, SIGNAL_UPDATED, THUMBNAIL_URL_LIFETIME, TMDB_IMAGE_URL, api_enabled
 from .coordinator import MyMoviesConfigEntry
 from .covers import InvalidImageError, read_upload, remove_upload, save_upload, valid_key
 
@@ -30,6 +31,7 @@ def async_setup_websocket(hass: HomeAssistant) -> None:
     websocket_api.async_register_command(hass, ws_cover_choices)
     websocket_api.async_register_command(hass, ws_set_cover)
     websocket_api.async_register_command(hass, ws_set_details)
+    websocket_api.async_register_command(hass, ws_subscribe)
 
 
 def _sign(hass: HomeAssistant, connection: websocket_api.ActiveConnection, path: str) -> str:
@@ -259,3 +261,18 @@ async def ws_set_details(
     await store.async_save()
     entry.runtime_data.async_update_listeners()
     connection.send_result(msg["id"], {})
+
+
+@websocket_api.websocket_command({vol.Required("type"): "mymovies/subscribe"})
+@callback
+def ws_subscribe(
+    hass: HomeAssistant, connection: websocket_api.ActiveConnection, msg: dict[str, Any]
+) -> None:
+    """Tell the panel each time the collection changes (it then reloads it)."""
+
+    @callback
+    def forward() -> None:
+        connection.send_message(websocket_api.event_message(msg["id"], {"updated": True}))
+
+    connection.subscriptions[msg["id"]] = async_dispatcher_connect(hass, SIGNAL_UPDATED, forward)
+    connection.send_result(msg["id"])

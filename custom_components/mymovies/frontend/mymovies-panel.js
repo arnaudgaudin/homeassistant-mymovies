@@ -226,6 +226,26 @@ class MyMoviesPanel extends HTMLElement {
       this._t = STRINGS[this._lang];
       this._renderShell();
       this._load();
+      this._subscribe();
+    }
+  }
+
+  connectedCallback() {
+    if (this._hass) this._subscribe();
+  }
+
+  // The collection changes in the background (covers found on TMDB after an import,
+  // watched from an automation...): reload it, at most once every 2 seconds.
+  async _subscribe() {
+    if (this._unsubscribe) return;
+    this._unsubscribe = true;
+    try {
+      this._unsubscribe = await this._hass.connection.subscribeMessage(() => {
+        clearTimeout(this._reloadTimer);
+        this._reloadTimer = setTimeout(() => this._load(), 2000);
+      }, { type: "mymovies/subscribe" });
+    } catch (err) {
+      this._unsubscribe = null; // older integration: no live updates
     }
   }
 
@@ -236,6 +256,9 @@ class MyMoviesPanel extends HTMLElement {
 
   disconnectedCallback() {
     window.removeEventListener("keydown", this._onKey);
+    clearTimeout(this._reloadTimer);
+    if (typeof this._unsubscribe === "function") this._unsubscribe();
+    this._unsubscribe = null;
   }
 
   _saveState() {

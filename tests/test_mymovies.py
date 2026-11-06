@@ -781,3 +781,14 @@ def test_import_modes() -> None:
     assert result["removed_files"] == ["e_alien.jpg"]
     assert sorted(store.catalog) == [1, 2, 4]
     assert store.viewings == {} and store.details == {} and store.overrides == {}
+
+
+async def test_panel_subscription(hass: HomeAssistant, hass_ws_client) -> None:
+    """An open panel hears about collection changes (covers found, imports...)."""
+    entry = await _setup(hass)
+    client = await hass_ws_client(hass)
+    await client.send_json_auto_id({"type": "mymovies/subscribe"})
+    assert (await client.receive_json())["success"]
+    entry.runtime_data.async_update_listeners()
+    event = await client.receive_json()
+    assert event["type"] == "event" and event["event"] == {"updated": True}

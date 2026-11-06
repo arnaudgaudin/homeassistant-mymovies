@@ -33,6 +33,7 @@ ATTR_NOTES = "notes"
 TMDB_IMAGE_URL = "https://image.tmdb.org/t/p/w342"
 
 PANEL_URL = "mymovies"
+SIGNAL_UPDATED = f"{DOMAIN}_updated"  # the collection changed: open panels reload it
 STATIC_URL = "/mymovies_static"
 THUMBNAIL_PATH = "/api/mymovies/thumbnail/{entry_id}/{title_id}"
 COVER_PATH = "/api/mymovies/cover/{entry_id}/{key}"
