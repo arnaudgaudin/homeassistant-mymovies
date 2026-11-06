@@ -18,6 +18,7 @@ def api_enabled() -> bool:
 
 
 CONF_EXPORT_FILE = "export_file"
+CONF_IMPORT_MODE = "import_mode"
 CONF_TMDB_API_KEY = "tmdb_api_key"
 CONF_OMDB_API_KEY = "omdb_api_key"
 # Where to get the keys, shown in the setup and options forms.

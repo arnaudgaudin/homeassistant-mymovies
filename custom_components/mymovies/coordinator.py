@@ -24,7 +24,8 @@ from .api import (
     MyMoviesClient,
     MyMoviesError,
 )
-from .catalog import CatalogEntry, CatalogStore, normalize_title
+from .catalog import IMPORT_UPDATE, CatalogEntry, CatalogStore, normalize_title, title_id
+from .covers import remove_upload
 from .const import (
     CONF_OMDB_API_KEY,
     CONF_TMDB_API_KEY,
@@ -134,11 +135,11 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
         self.offline = True
         titles = {}
         for number, entry in self.store.catalog.items():
-            title_id = f"00000000-0000-0000-0000-{number:012d}"
-            titles[title_id] = CollectionTitle(
-                id=title_id,
+            key = title_id(number)
+            titles[key] = CollectionTitle(
+                id=key,
                 collection_number=number,
-                watched=self.local_watched(title_id, entry.watched),
+                watched=self.local_watched(key, entry.watched),
                 group=entry.group,
                 added=entry.added,
                 data_changed="",
@@ -304,11 +305,16 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
         if due:
             self._children_checked = now
 
-    async def async_import_catalog(self, catalog: dict[int, CatalogEntry]) -> None:
-        """Replace the imported export and refresh what depends on it."""
-        self.store.catalog = catalog
+    async def async_import_catalog(
+        self, catalog: dict[int, CatalogEntry], mode: str = IMPORT_UPDATE
+    ) -> dict[str, Any]:
+        """Take a new export (update or full replace) and refresh what depends on it."""
+        result = self.store.apply_import(catalog, mode)
+        for name in result.pop("removed_files"):
+            await self.hass.async_add_executor_job(remove_upload, self.hass, name)
         await self.store.async_save()
         await self.async_refresh()
+        return result
 
     def local_watched(self, key: str, default: bool) -> bool:
         """Watched state kept in Home Assistant, else the export's."""

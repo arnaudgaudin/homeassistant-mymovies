@@ -14,7 +14,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from . import tmdb
-from .catalog import InvalidExportError, read_uploaded_export
+from .catalog import IMPORT_REPLACE, IMPORT_UPDATE, InvalidExportError, read_uploaded_export
 from .const import CONF_TMDB_API_KEY, DOMAIN, THUMBNAIL_URL_LIFETIME, TMDB_IMAGE_URL, api_enabled
 from .coordinator import MyMoviesConfigEntry
 from .covers import InvalidImageError, read_upload, remove_upload, save_upload, valid_key
@@ -90,6 +90,8 @@ def ws_collection(
     {
         vol.Required("type"): "mymovies/import_export",
         vol.Required("file_id"): str,
+        # update: add new discs and viewings, keep what was set here; replace: start over.
+        vol.Optional("mode", default=IMPORT_UPDATE): vol.In([IMPORT_UPDATE, IMPORT_REPLACE]),
         vol.Optional("entry_id"): str,
     }
 )
@@ -108,8 +110,7 @@ async def ws_import_export(
     except (InvalidExportError, ValueError) as err:
         connection.send_error(msg["id"], "invalid_export", str(err))
         return
-    await entry.runtime_data.async_import_catalog(catalog)
-    connection.send_result(msg["id"], {"count": len(catalog)})
+    connection.send_result(msg["id"], await entry.runtime_data.async_import_catalog(catalog, msg["mode"]))
 
 
 def _known(entry: MyMoviesConfigEntry, key: str) -> bool:

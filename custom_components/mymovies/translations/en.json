@@ -43,9 +43,10 @@
       "init": {
         "title": "Collection export and covers",
         "description": "Export your collection from the My Movies app (CSV) and import it here; re-import it after adding titles. Titles currently known: {count}.\n\nThe TMDB key is required: get it for free on [themoviedb.org]({tmdb_url}). The OMDb key is optional: get it for free on [omdbapi.com]({omdb_url}).",
-        "data": { "export_file": "Collection export (CSV)", "tmdb_api_key": "TMDB API key", "omdb_api_key": "OMDb API key (optional)" },
+        "data": { "export_file": "Collection export (CSV)", "import_mode": "Import mode", "tmdb_api_key": "TMDB API key", "omdb_api_key": "OMDb API key (optional)" },
         "data_description": {
           "export_file": "The CSV file exported by the My Movies app. Leave empty to keep the current one.",
+          "import_mode": "Only used when a file is chosen.",
           "tmdb_api_key": "Required. Free TMDB key (v3): covers, French titles, box sets, genres, ratings and production countries.",
           "omdb_api_key": "Optional. Free OMDb key: a fallback with IMDb data (rating, genres, countries, running time, director) for titles TMDB leaves incomplete."
         }
@@ -57,6 +58,14 @@
       "tmdb_unreachable": "Could not reach TMDB to check the key.",
       "invalid_omdb_key": "OMDb rejected this API key (or its daily limit is reached).",
       "omdb_unreachable": "Could not reach OMDb to check the key."
+    }
+  },
+  "selector": {
+    "import_mode": {
+      "options": {
+        "update": "Update: add the new discs and the viewings of the export, keep what was set in Home Assistant",
+        "replace": "Full replace: the export becomes the whole collection (viewings, chosen genres and covers are dropped)"
+      }
     }
   },
   "issues": {

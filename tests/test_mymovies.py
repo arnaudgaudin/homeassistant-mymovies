@@ -271,7 +271,7 @@ async def test_import_from_panel(hass: HomeAssistant, hass_ws_client, hass_admin
     ):
         await client.send_json_auto_id({"type": "mymovies/import_export", "file_id": "abc"})
         msg = await client.receive_json()
-    assert msg["success"] and msg["result"] == {"count": 4}
+    assert msg["success"] and msg["result"] == {"count": 4, "added": 4, "watched": 0}
     assert entry.runtime_data.store.catalog == CATALOG
     assert ir.async_get(hass).async_get_issue(DOMAIN, f"catalog_{entry.entry_id}") is None
 
@@ -749,3 +749,35 @@ async def test_omdb_completes_tmdb(hass: HomeAssistant) -> None:
     assert (obscure["runtime"], obscure["director"]) == (95, "Jane Doe")
     complete = coordinator.describe(titles[1], details=True)
     assert (complete["rating"], complete["genres"]) == (7.0, ["Drama"])  # the export wins
+
+
+def test_import_modes() -> None:
+    """Update adds discs and viewings and keeps local choices; replace starts over."""
+    from custom_components.mymovies.catalog import CatalogStore, title_id
+
+    store = CatalogStore.__new__(CatalogStore)
+    store.catalog = {
+        1: CatalogEntry("Alien", "Alien", "Alien", "tt0078748", 1979),
+        2: CatalogEntry("Up", "Up", "Up", "tt1049413", 2009),
+        3: CatalogEntry("Gone", "Gone", "Gone", None, 2000),
+    }
+    up, alien = title_id(2).lower(), title_id(1).lower()
+    store.viewings = {up: {"watched": False, "dates": []}, alien: {"watched": True, "dates": ["2026-11-06T21:00:00"]}}
+    store.details = {alien: {"genres": ["Horror"]}}
+    store.overrides = {alien: {"source": "upload", "file": "e_alien.jpg"}}
+    export = {
+        1: CatalogEntry("Alien, le 8e passager", "Alien", "Alien", "tt0078748", 1979, watched=True),
+        2: CatalogEntry("Là-haut", "Up", "Up", "tt1049413", 2009, watched=True),
+        4: CatalogEntry("Drive", "Drive", "Drive", "tt0780504", 2011, watched=True),
+    }
+    result = store.apply_import(dict(export), "update")
+    assert result == {"count": 3, "added": 1, "watched": 2, "removed_files": []}
+    assert sorted(store.catalog) == [1, 2, 3, 4]  # a disc missing from the export is kept
+    assert store.catalog[1].title == "Alien, le 8e passager"  # refreshed from the export
+    assert up not in store.viewings  # watched in the app since: the export wins
+    assert store.viewings[alien]["dates"] and store.details[alien] and store.overrides[alien]
+
+    result = store.apply_import(dict(export), "replace")
+    assert result["removed_files"] == ["e_alien.jpg"]
+    assert sorted(store.catalog) == [1, 2, 4]
+    assert store.viewings == {} and store.details == {} and store.overrides == {}

@@ -13,6 +13,7 @@ import re
 import unicodedata
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any
 
 from homeassistant.components.file_upload import process_uploaded_file
 from homeassistant.core import HomeAssistant
@@ -169,6 +170,15 @@ def read_uploaded_export(hass: HomeAssistant, file_id: str) -> dict[int, Catalog
         return parse_export(Path(path))
 
 
+IMPORT_UPDATE = "update"
+IMPORT_REPLACE = "replace"
+
+
+def title_id(number: int) -> str:
+    """Stable ID of a title of the export, from its collection number."""
+    return f"00000000-0000-0000-0000-{number:012d}"
+
+
 class CatalogStore:
     """Persist the imported catalog, the TMDB lookups and the covers chosen by the user.
 
@@ -200,6 +210,35 @@ class CatalogStore:
         self.overrides = data.get("overrides", {})
         self.viewings = data.get("viewings", {})
         self.details = data.get("details", {})
+
+    def apply_import(self, catalog: dict[int, CatalogEntry], mode: str) -> dict[str, Any]:
+        """Take a new export into the collection.
+
+        replace: the export becomes the whole collection; the viewings, details and
+        covers chosen in Home Assistant are dropped (the uploaded files to delete are
+        returned in "removed_files").
+        update: discs new to the collection are added and the others refreshed from the
+        export, keeping what was set in Home Assistant; a disc watched in the export
+        becomes watched here too. Discs missing from the export are kept.
+        """
+        added = [n for n in catalog if n not in self.catalog]
+        result: dict[str, Any] = {"count": len(catalog), "added": len(added), "watched": 0, "removed_files": []}
+        if mode == IMPORT_REPLACE:
+            result["removed_files"] = [o["file"] for o in self.overrides.values() if o.get("source") == "upload"]
+            self.catalog = dict(catalog)
+            self.viewings, self.details, self.overrides = {}, {}, {}
+            return result
+        for number, entry in catalog.items():
+            key = title_id(number).lower()
+            viewing = self.viewings.get(key)
+            old = self.catalog.get(number)
+            was_watched = viewing["watched"] if viewing else bool(old and old.watched)
+            if entry.watched and not was_watched:
+                # Watched in the app since: the viewing is added here.
+                self.viewings.pop(key, None)
+                result["watched"] += 1
+            self.catalog[number] = entry
+        return result
 
     async def async_save(self) -> None:
         await self._store.async_save(

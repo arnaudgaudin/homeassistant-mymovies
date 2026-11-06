@@ -48,6 +48,11 @@ My Movies app:
 3. Re-import a fresh export after adding titles; a repair notice tells you when
    titles are missing.
 
+When a collection already exists, an import either **updates** it (adds the new
+discs and the viewings of the export, refreshes the others and keeps what was set
+in Home Assistant: viewings, genres, covers; discs missing from the export are kept)
+or **replaces** it completely (the export becomes the whole collection).
+
 A free [TMDB API key](https://www.themoviedb.org/settings/api) (v3) is **required**
 at setup (and can be changed in the options): TMDB gives the covers, French titles,
 box sets, genres, ratings and production countries. A free

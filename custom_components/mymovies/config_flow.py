@@ -20,6 +20,9 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     FileSelector,
     FileSelectorConfig,
+    SelectSelector,
+    SelectSelectorConfig,
+    SelectSelectorMode,
     TextSelector,
     TextSelectorConfig,
     TextSelectorType,
@@ -27,8 +30,9 @@ from homeassistant.helpers.selector import (
 
 from . import omdb, tmdb
 from .api import MyMoviesAuthError, MyMoviesClient, MyMoviesError
-from .catalog import CatalogEntry, CatalogStore, InvalidExportError, read_uploaded_export
-from .const import CONF_EXPORT_FILE, CONF_OMDB_API_KEY, CONF_TMDB_API_KEY, DOMAIN, KEY_URLS, api_enabled
+from .catalog import IMPORT_REPLACE, IMPORT_UPDATE, CatalogEntry, CatalogStore, InvalidExportError, read_uploaded_export
+from .covers import remove_upload
+from .const import CONF_EXPORT_FILE, CONF_IMPORT_MODE, CONF_OMDB_API_KEY, CONF_TMDB_API_KEY, DOMAIN, KEY_URLS, api_enabled
 
 PASSWORD_SELECTOR = TextSelector(
     TextSelectorConfig(type=TextSelectorType.PASSWORD, autocomplete="current-password")
@@ -50,7 +54,17 @@ KEYS_SCHEMA = vol.Schema(
     }
 )
 OPTIONS_SCHEMA = vol.Schema(
-    {vol.Optional(CONF_EXPORT_FILE): FileSelector(FileSelectorConfig(accept=".csv,text/csv"))}
+    {
+        vol.Optional(CONF_EXPORT_FILE): FileSelector(FileSelectorConfig(accept=".csv,text/csv")),
+        # How a new export meets the collection already in Home Assistant.
+        vol.Optional(CONF_IMPORT_MODE, default=IMPORT_UPDATE): SelectSelector(
+            SelectSelectorConfig(
+                options=[IMPORT_UPDATE, IMPORT_REPLACE],
+                mode=SelectSelectorMode.LIST,
+                translation_key=CONF_IMPORT_MODE,
+            )
+        ),
+    }
 ).extend(KEYS_SCHEMA.schema)
 
 
@@ -181,7 +195,7 @@ class MyMoviesOptionsFlow(OptionsFlow):
                 except InvalidExportError:
                     errors[CONF_EXPORT_FILE] = "invalid_export"
                 else:
-                    await self._async_save_catalog(catalog)
+                    await self._async_save_catalog(catalog, user_input.get(CONF_IMPORT_MODE, IMPORT_UPDATE))
             if not errors:
                 # Saving the options reloads the entry, which applies both changes.
                 return self.async_create_entry(data=options)
@@ -203,12 +217,14 @@ class MyMoviesOptionsFlow(OptionsFlow):
             return self.config_entry.runtime_data.store.catalog
         return {}
 
-    async def _async_save_catalog(self, catalog: dict[int, CatalogEntry]) -> None:
-        """Save through the running store when loaded, so nothing overwrites it."""
+    async def _async_save_catalog(self, catalog: dict[int, CatalogEntry], mode: str) -> None:
+        """Take the export in (update or replace), through the running store when loaded."""
         if self.config_entry.state is ConfigEntryState.LOADED:
             store = self.config_entry.runtime_data.store
         else:
             store = CatalogStore(self.hass, self.config_entry.entry_id)
             await store.async_load()
-        store.catalog = catalog
+        result = store.apply_import(catalog, mode)
+        for name in result["removed_files"]:
+            await self.hass.async_add_executor_job(remove_upload, self.hass, name)
         await store.async_save()

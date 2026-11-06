@@ -40,7 +40,12 @@ const STRINGS = {
     sources: { tmdb: "TMDB", mymovies: "My Movies", upload: "Your image" },
     importCsv: "Import the collection export",
     importTitle: "Import the My Movies export",
-    importText: "In the My Movies app, export your collection to a CSV file, then choose it here. It gives the titles their names, IMDb IDs and details; the watched state always comes from My Movies.",
+    importText: "In the My Movies app, export your collection to a CSV file, then choose it here. It gives the titles their names, IMDb IDs, details and watched state.",
+    importModes: {
+      update: ["Update", "Adds the new discs and the viewings of the export; keeps what was set here (viewings, genres, covers)."],
+      replace: ["Full replace", "The export becomes the whole collection: viewings, genres and covers set here are erased."],
+    },
+    importedUpdate: "{n} titles in the export: {a} new discs, {w} new viewings.",
     importButton: "Import", importing: "Importing…", imported: "{n} titles imported.",
     sort: {
       title: "Title", collection_number: "Collection number", rating: "Rating",
@@ -82,7 +87,12 @@ const STRINGS = {
     sources: { tmdb: "TMDB", mymovies: "My Movies", upload: "Ton image" },
     importCsv: "Importer l'export de la collection",
     importTitle: "Importer l'export My Movies",
-    importText: "Dans l'application My Movies, exportez votre collection en fichier CSV, puis choisissez-le ici. Il donne aux titres leur nom, leur ID IMDb et leurs détails ; le statut « vu » vient toujours de My Movies.",
+    importText: "Dans l'application My Movies, exportez votre collection en fichier CSV, puis choisissez-le ici. Il donne aux titres leur nom, leur ID IMDb, leurs détails et leur statut « vu ».",
+    importModes: {
+      update: ["Mise à jour", "Ajoute les nouveaux disques et les visionnages de l'export ; garde ce qui a été réglé ici (visionnages, genres, jaquettes)."],
+      replace: ["Remplacement complet", "L'export devient toute la collection : les visionnages, genres et jaquettes réglés ici sont effacés."],
+    },
+    importedUpdate: "{n} titres dans l'export : {a} nouveaux disques, {w} nouveaux visionnages.",
     importButton: "Importer", importing: "Import en cours…", imported: "{n} titres importés.",
     sort: {
       title: "Titre", collection_number: "Numéro de collection", rating: "Note",
@@ -1056,6 +1066,11 @@ class MyMoviesPanel extends HTMLElement {
         <h2>${esc(t.importTitle)}</h2>
         <p>${esc(t.importText)}</p>
         <input id="file" type="file" accept=".csv,text/csv" ${this._busy ? "disabled" : ""} />
+        ${this._titles?.length ? `<div class="import-modes" role="radiogroup">
+          ${Object.entries(t.importModes).map(([mode, [label, hint]]) => `
+            <label class="import-mode ${mode}"><input type="radio" name="import-mode" value="${mode}" ${mode === (d.mode || "update") ? "checked" : ""} ${this._busy ? "disabled" : ""} />
+              <span><strong>${esc(label)}</strong><span class="hint">${esc(hint)}</span></span></label>`).join("")}
+        </div>` : ""}
         <div class="actions">
           ${d.error ? `<span class="error">${esc(t.failed)} : ${esc(d.error)}</span>` : ""}
           ${d.status ? `<span class="ok">${esc(d.status)}</span>` : ""}
@@ -1144,8 +1159,15 @@ class MyMoviesPanel extends HTMLElement {
       const resp = await this._hass.fetchWithAuth("/api/file_upload", { method: "POST", body: form });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const { file_id } = await resp.json();
-      const result = await this._hass.connection.sendMessagePromise({ type: "mymovies/import_export", file_id });
-      if (this._dialog) this._dialog.status = this._t.imported.replace("{n}", result.count);
+      const mode = this.shadowRoot.querySelector('input[name="import-mode"]:checked')?.value || "update";
+      if (this._dialog) this._dialog.mode = mode;
+      const result = await this._hass.connection.sendMessagePromise({ type: "mymovies/import_export", file_id, mode });
+      const t = this._t;
+      if (this._dialog) {
+        this._dialog.status = mode === "update" && this._titles?.length
+          ? t.importedUpdate.replace("{n}", result.count).replace("{a}", result.added).replace("{w}", result.watched)
+          : t.imported.replace("{n}", result.count);
+      }
       await this._load();
     } catch (err) {
       if (this._dialog) this._dialog.error = err.message || String(err);
@@ -1292,6 +1314,11 @@ const STYLE = `
   .hint { color: var(--secondary-text-color); font-size: 13px; }
   .dialog-cover { width: min(760px, 100%); }
   .import-body { padding: 24px; }
+  .import-modes { display: flex; flex-direction: column; gap: 8px; margin: 12px 0; }
+  .import-mode { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--divider-color); border-radius: 10px; cursor: pointer; }
+  .import-mode input { margin-top: 3px; }
+  .import-mode .hint { display: block; font-size: 13px; color: var(--secondary-text-color); margin-top: 2px; }
+  .import-mode.replace:has(input:checked) { border-color: var(--error-color, #db4437); }
   .dialog-stats { width: min(560px, 100%); }
   .stats-body h2 { display: flex; align-items: center; gap: 10px; }
   .stat-list { display: flex; flex-direction: column; margin-top: 12px; }
