@@ -168,18 +168,40 @@ async def async_movie_collection(
     return (data.get("belongs_to_collection") or {}).get("id")
 
 
-async def async_countries(
+# TMDB genre IDs (films and series) as the English genre names of My Movies.
+GENRES = {
+    28: ["Action"], 12: ["Adventure"], 16: ["Animation"], 35: ["Comedy"], 80: ["Crime"],
+    99: ["Documentary"], 18: ["Drama"], 10751: ["Family"], 14: ["Fantasy"], 36: ["History"],
+    27: ["Horror"], 10402: ["Music"], 9648: ["Mystery"], 10749: ["Romance"],
+    878: ["Science-Fiction"], 10770: ["Television"], 53: ["Suspense/Thriller"], 10752: ["War"],
+    37: ["Western"], 10759: ["Action", "Adventure"], 10762: ["Family"],
+    10765: ["Science-Fiction", "Fantasy"], 10766: ["Drama"], 10768: ["War"],
+}
+
+
+def genre_names(ids: list[int]) -> list[str]:
+    """My Movies genre names of TMDB genre IDs, in order and without repeats."""
+    return list(dict.fromkeys(name for i in ids for name in GENRES.get(i, [])))
+
+
+async def async_details(
     session: aiohttp.ClientSession, api_key: str, match: TmdbMatch, parts: list[dict[str, Any]], language: str
-) -> list[str]:
-    """Production countries (ISO 3166-1 codes) of a film or series; a collection's come from its first film."""
-    kind, tmdb_id = match.kind, match.id
+) -> dict[str, list[str]]:
+    """Production countries (ISO 3166-1 codes) and genres of a film or series.
+
+    A collection takes the genres of all its films and the countries of the first one.
+    """
+    kind, tmdb_id, genres = match.kind, match.id, None
     if kind == "collection":
         if not parts:
-            return []
+            return {"countries": [], "genres": []}
+        genres = genre_names([g for p in parts for g in p.get("genre_ids") or []])
         kind, tmdb_id = "movie", parts[0]["id"]
     data = await _get(session, f"/{kind}/{tmdb_id}", {"api_key": api_key, "language": language})
     codes = [c["iso_3166_1"] for c in data.get("production_countries") or [] if c.get("iso_3166_1")]
-    return codes or list(data.get("origin_country") or [])
+    if genres is None:
+        genres = genre_names([g["id"] for g in data.get("genres") or [] if "id" in g])
+    return {"countries": codes or list(data.get("origin_country") or []), "genres": genres}
 
 
 async def async_collection_parts(
@@ -199,6 +221,7 @@ async def async_collection_parts(
                 "year": int(date[:4]) if date[:4].isdigit() else None,
                 "poster": part.get("poster_path") or "",
                 "overview": part.get("overview") or "",
+                "genre_ids": part.get("genre_ids") or [],
             }
         )
     return sorted(parts, key=lambda p: p["release_date"] or "9999")

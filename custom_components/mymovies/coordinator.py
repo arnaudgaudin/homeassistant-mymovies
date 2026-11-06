@@ -38,7 +38,7 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 # Bumped when what is kept from TMDB changes, so that every title is looked up again once.
-LOOKUP_VERSION = 4
+LOOKUP_VERSION = 5
 
 # The API gives the watched flag of box-set films one by one: read them less often.
 CHILDREN_WATCHED_INTERVAL = timedelta(hours=6)
@@ -197,6 +197,7 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
                         "height": 0,
                         "overview": part["overview"],
                         "release_date": part["release_date"],
+                        "genres": tmdb.genre_names(part.get("genre_ids") or []),
                     }
                 )
                 data.box_sets.setdefault(key, []).append(
@@ -456,13 +457,12 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
                     if match.kind == "collection":
                         found["parts"] = await self._async_box_set_films(session, api_key, match, item, lang)
                     try:
-                        found["countries"] = await tmdb.async_countries(
-                            session, api_key, match, found.get("parts") or [], lang
-                        )
+                        # Countries for the statistics, genres for the titles the export leaves without.
+                        found |= await tmdb.async_details(session, api_key, match, found.get("parts") or [], lang)
                     except tmdb.TmdbAuthError:
                         raise
                     except tmdb.TmdbError:
-                        found["countries"] = []  # only the statistics miss it
+                        found |= {"countries": [], "genres": []}
                     posters = await tmdb.async_posters(session, api_key, match, lang)
                     if best := tmdb.best_poster(posters, lang):
                         found.update(
@@ -593,6 +593,10 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
             "watched": self._child_watched(child),
             "title_id": self.data.child_titles.get(key) if self.data else None,
         }
+        # A disc owned as its own title has the export's genres, else TMDB's.
+        title = self.data.titles.get(data["title_id"]) if self.data and data["title_id"] else None
+        entry = self.entry_for(title) if title else None
+        data["genres"] = (entry.genres if entry else []) or (self.store.covers.get(key) or {}).get("genres", [])
         self._apply_cover(data, self.cover(key))
         return data
 
@@ -627,6 +631,8 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
                 data["description"] = (self.store.covers.get(key) or {}).get("overview", "")
             data["film_release_date"] = (self.store.covers.get(key) or {}).get("release_date", "")
             data["countries"] = (self.store.covers.get(key) or {}).get("countries", [])
+            # Box sets have no genre in the export: TMDB gives those of their films.
+            data["genres"] = data["genres"] or (self.store.covers.get(key) or {}).get("genres", [])
             data["children"] = [self.describe_child(c) for c in children]
             data["box_set_id"] = self.data.box_of.get(key) if self.data else None
         else:
