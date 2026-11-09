@@ -48,6 +48,12 @@ LOOKUP_VERSION = 6
 # The API gives the watched flag of box-set films one by one: read them less often.
 CHILDREN_WATCHED_INTERVAL = timedelta(hours=6)
 
+# OMDb's free key allows 1,000 requests a day: at most 40 per hourly update (960 a day),
+# a second apart, and none for a day once it says the limit is reached.
+OMDB_PER_UPDATE = 40
+OMDB_DELAY = 1
+OMDB_PAUSE = timedelta(hours=24)
+
 type MyMoviesConfigEntry = ConfigEntry[MyMoviesCoordinator]
 
 DETAIL_FIELDS = (
@@ -101,6 +107,7 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
         self._box_set_cache: dict[str, list[BoxSetChild]] = {}
         self._children_watched: dict[str, bool] = {}
         self._children_checked: datetime | None = None
+        self._omdb_paused_until: datetime | None = None
         # True when My Movies refuses its API: the collection comes from the export only.
         self.offline = False
 
@@ -398,6 +405,8 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
         """
         if not self.config_entry.options.get(CONF_OMDB_API_KEY):
             return []
+        if self._omdb_paused_until and dt_util.utcnow() < self._omdb_paused_until:
+            return []
         todo = []
         items: list[tuple[str, CatalogEntry | BoxSetChild]] = [
             (key, entry) for key, title in data.titles.items() if (entry := self.entry_for(title))
@@ -427,11 +436,16 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
         api_key = self.config_entry.options.get(CONF_OMDB_API_KEY)
         done = 0
         try:
-            for key, query in self._omdb_todo(data):
+            for key, query in self._omdb_todo(data)[:OMDB_PER_UPDATE]:
+                if done:
+                    await asyncio.sleep(OMDB_DELAY)
                 self.store.covers[key]["omdb"] = await omdb.async_lookup(session, api_key, **query)
                 done += 1
         except omdb.OmdbAuthError as err:
-            _LOGGER.warning("OMDb lookups stopped (key refused or daily limit reached): %s", err)
+            self._omdb_paused_until = dt_util.utcnow() + OMDB_PAUSE
+            _LOGGER.warning(
+                "OMDb lookups paused for %s (key refused or daily limit reached): %s", OMDB_PAUSE, err
+            )
         except omdb.OmdbError as err:
             _LOGGER.warning("OMDb lookups stopped: %s", err)
         return done

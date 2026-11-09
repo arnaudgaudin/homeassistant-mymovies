@@ -762,6 +762,47 @@ async def test_omdb_completes_tmdb(hass: HomeAssistant) -> None:
     assert (complete["rating"], complete["genres"]) == (7.0, ["Drama"])  # the export wins
 
 
+async def test_omdb_spread_and_paused_at_limit(hass: HomeAssistant) -> None:
+    """OMDb is asked a few titles per update, and not again for a day once the limit is reached."""
+    from datetime import timedelta
+
+    from homeassistant.util import dt as dt_util
+
+    from custom_components.mymovies import coordinator as coordinator_module, omdb, tmdb
+
+    titles = [_title(1), _title(2), _title(3)]
+    entry = await _setup(hass, {"tmdb_api_key": "k", "omdb_api_key": "o"})
+    coordinator = entry.runtime_data
+    coordinator.store.catalog = {
+        n: CatalogEntry(f"Film {n}", f"Film {n}", f"Film {n}", f"tt000000{n}", 2000) for n in (1, 2, 3)
+    }
+    found = {"rating": 6.0, "genres": ["Drama"], "countries": ["FR"], "runtime": 90, "director": "X"}
+    lookup = AsyncMock(side_effect=[found, omdb.OmdbAuthError("Request limit reached!"), found, found])
+
+    async def refresh() -> None:
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+
+    with (
+        patch.object(coordinator_module, "OMDB_PER_UPDATE", 2),
+        patch.object(coordinator_module, "OMDB_DELAY", 0),
+        patch.object(tmdb, "async_find_imdb", AsyncMock(side_effect=lambda *a: tmdb.TmdbMatch("movie", 7))),
+        patch.object(tmdb, "async_details", AsyncMock(return_value={"countries": [], "genres": [], "rating": None})),
+        patch.object(tmdb, "async_posters", AsyncMock(return_value=[])),
+        patch.object(omdb, "async_lookup", lookup),
+        patch(f"{CLIENT}.async_get_titles", return_value=titles),
+        patch(f"{CLIENT}.async_get_box_set_children", return_value={}),
+        patch(f"{CLIENT}.async_get_titles_in_box_set", return_value=[]),
+    ):
+        await refresh()
+        assert lookup.await_count == 2  # the second answer is the daily limit
+        await refresh()
+        assert lookup.await_count == 2  # paused: OMDb is not asked again
+        coordinator._omdb_paused_until = dt_util.utcnow() - timedelta(seconds=1)
+        await refresh()
+        assert lookup.await_count == 4  # the two titles left, within one update
+
+
 def test_import_modes() -> None:
     """Update adds discs and viewings and keeps local choices; replace starts over."""
     from custom_components.mymovies.catalog import CatalogStore, title_id
