@@ -48,7 +48,8 @@ async def _get(session: aiohttp.ClientSession, params: dict[str, str]) -> dict[s
         async with session.get(OMDB_API, params=params, timeout=TIMEOUT) as resp:
             data = await resp.json(content_type=None)
     except (aiohttp.ClientError, TimeoutError, ValueError) as err:
-        raise OmdbError(str(err)) from err
+        # A timeout has no message: name it rather than log an empty reason
+        raise OmdbError(str(err) or type(err).__name__) from err
     if data.get("Response") == "True":
         return data
     error = data.get("Error", "")

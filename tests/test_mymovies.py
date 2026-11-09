@@ -711,6 +711,18 @@ def test_omdb_parse() -> None:
     assert omdb.parse({"imdbRating": "N/A", "Runtime": "N/A", "Director": "N/A"})["rating"] is None
 
 
+async def test_omdb_timeout_is_named() -> None:
+    """A timeout has no message of its own: the error names it."""
+    from unittest.mock import MagicMock
+
+    from custom_components.mymovies import omdb
+
+    session = MagicMock()
+    session.get.side_effect = TimeoutError()
+    with pytest.raises(omdb.OmdbError, match="^TimeoutError$"):
+        await omdb.async_lookup(session, "o", imdb="tt0000001", title="X", year=None)
+
+
 async def test_omdb_completes_tmdb(hass: HomeAssistant) -> None:
     """With an OMDb key, titles TMDB leaves incomplete are asked once to OMDb."""
     from custom_components.mymovies import omdb, tmdb
