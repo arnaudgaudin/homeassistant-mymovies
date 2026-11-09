@@ -551,6 +551,9 @@ class MyMoviesCoordinator(DataUpdateCoordinator[MyMoviesData]):
                         found.update(
                             path=best["path"], width=best["width"], height=best["height"], lang=best["lang"]
                         )
+                # A new TMDB lookup (LOOKUP_VERSION bump) keeps what OMDb already answered
+                if "omdb" in (previous := self.store.covers.get(key) or {}):
+                    found["omdb"] = previous["omdb"]
                 self.store.covers[key] = found
                 done += 1
                 if done % 25 == 0:

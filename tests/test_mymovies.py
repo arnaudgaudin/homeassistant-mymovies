@@ -744,6 +744,17 @@ async def test_omdb_completes_tmdb(hass: HomeAssistant) -> None:
         await coordinator.async_refresh()  # asked once only
         await hass.async_block_till_done()
         assert lookup.await_count == 1
+        # A new TMDB lookup of every title (LOOKUP_VERSION bump) keeps what OMDb answered
+        details.side_effect = [
+            {"countries": [], "genres": [], "rating": None},
+            {"countries": ["FR"], "genres": [], "rating": None},
+        ]
+        for cover in coordinator.store.covers.values():
+            cover["v"] = 0
+        await coordinator.async_refresh()
+        await hass.async_block_till_done()
+        assert details.await_count == 4
+        assert lookup.await_count == 1
     obscure = coordinator.describe(titles[0], details=True)
     assert (obscure["rating"], obscure["genres"], obscure["countries"]) == (6.1, ["Horror"], ["GB"])
     assert (obscure["runtime"], obscure["director"]) == (95, "Jane Doe")
